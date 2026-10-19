@@ -7,7 +7,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Aspect = Literal["16:9", "9:16", "1:1"]
-Reframe = Literal["none", "blur_pad", "face_track", "action_track"]
+Reframe = Literal["none", "blur_pad", "face_track", "action_track", "split_facecam"]
+Corner = Literal["auto", "bottom_left", "bottom_right", "top_left", "top_right"]
 ContentType = Literal["gaming", "tech_facts", "stream_bestof"]
 Pacing = Literal["calm", "dynamic", "hyper"]
 
@@ -121,8 +122,17 @@ class SmoothingSettings(_Model):
     reset_on_scene_cut: bool = True
 
 
+class FacecamSettings(_Model):
+    """`reframe: split_facecam` : facecam en bas, gameplay en haut (format clips de streamers)."""
+
+    corner: Corner = "auto"  # auto = détection YuNet par clip (les créateurs repris varient)
+    split_ratio: float = Field(default=0.35, gt=0.1, lt=0.6)  # part de hauteur pour la facecam
+    fallback: Literal["blur_pad", "face_track", "action_track"] = "face_track"  # si aucune facecam
+
+
 class FramingSettings(_Model):
     smoothing: SmoothingSettings = Field(default_factory=SmoothingSettings)
+    facecam: FacecamSettings = Field(default_factory=FacecamSettings)
 
 
 class ChannelProfile(_Model):
