@@ -50,6 +50,10 @@ def merge_highlights(highlights: list[Highlight]) -> list[Highlight]:
             detectors = sorted({m.detector for m in members})
             bonus = 0.1 * (len(detectors) - 1)
             reasons = [m.reason for m in members if m.reason]
+            signals: dict[str, float] = {}
+            for m in members:  # explicabilité : max par signal sur les détecteurs fusionnés
+                for k, v in m.signals.items():
+                    signals[k] = max(v, signals.get(k, v))
             merged.append(
                 Highlight(
                     source=source,
@@ -59,6 +63,7 @@ def merge_highlights(highlights: list[Highlight]) -> list[Highlight]:
                     label=best.label,
                     detector="+".join(detectors),
                     reason="; ".join(dict.fromkeys(reasons)) or None,
+                    signals=signals,
                 )
             )
     return merged

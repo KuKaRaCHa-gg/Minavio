@@ -174,3 +174,17 @@ def test_audio_events_missing_checkpoint(monkeypatch, tmp_path):
     monkeypatch.setenv(events.CHECKPOINT_ENV, str(tmp_path / "nope.pth"))
     with pytest.raises(DetectorUnavailable):
         events._load_tagger("cpu")
+
+
+def test_merge_keeps_signals_max_per_key():
+    from pathlib import Path
+
+    from minavio.core.detect.registry import merge_highlights
+    from minavio.core.models import Highlight
+
+    a = Highlight(source=Path("a.mp4"), start=0, end=4, score=0.5, label="laugh",
+                  detector="hype", signals={"laughter": 0.9, "loudness_z": 1.0})  # fmt: skip
+    b = Highlight(source=Path("a.mp4"), start=3, end=6, score=0.7, label="peak",
+                  detector="audio_peak", signals={"loudness_z": 2.5})  # fmt: skip
+    (m,) = merge_highlights([a, b])
+    assert m.signals == {"laughter": 0.9, "loudness_z": 2.5}
