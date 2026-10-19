@@ -125,3 +125,25 @@ def test_cut_detector_flags_scene_change():
     black = np.zeros((180, 320, 3), np.uint8)
     white = np.full((180, 320, 3), 255, np.uint8)
     assert [cd.update(f) for f in (black, black, white, white)] == [False, False, True, False]
+
+
+def test_facecam_detected_once_per_source(vids, monkeypatch):
+    reframe.clear_facecam_cache()
+    calls = []
+    real = reframe.detect_facecam
+
+    def spy(*a, **k):
+        calls.append(a)
+        return real(*a, **k)
+
+    monkeypatch.setattr(reframe, "detect_facecam", spy)
+    a = reframe.plan_clip(vids["bottom_left"], 0.0, 0.4, "split_facecam")
+    b = reframe.plan_clip(vids["bottom_left"], 2.0, 2.6, "split_facecam")
+    assert len(calls) == 1
+    assert a.mode == b.mode == "split_facecam"
+    assert a.facecam is b.facecam and a.facecam.box == b.facecam.box
+    # source sans facecam : repli identique pour tous les fragments, une seule détection
+    n = reframe.plan_clip(vids["none"], 0.0, 0.4, "split_facecam")
+    m = reframe.plan_clip(vids["none"], 1.0, 1.3, "split_facecam")
+    assert len(calls) == 2 and n.mode == m.mode and n.facecam is None
+    reframe.clear_facecam_cache()

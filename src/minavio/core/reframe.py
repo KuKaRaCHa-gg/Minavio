@@ -816,6 +816,31 @@ def _motion_centroids(
 # --------------------------------------------------------------------------- plan par clip
 
 
+_FACECAM_CACHE: dict[tuple[str, str], FacecamDetection | None] = {}
+FACECAM_SOURCE_FRAMES = 16  # frames échantillonnés sur toute la durée de la source
+
+
+def clear_facecam_cache() -> None:
+    _FACECAM_CACHE.clear()
+
+
+def facecam_for_source(source: Path, corner: str = "auto") -> FacecamDetection | None:
+    """Facecam d'une source entière, détectée une seule fois par `(source, corner)`.
+
+    Tous les fragments d'une même source (autocut) partagent donc la même décision split/repli
+    et la même boîte. Une exception n'est pas mise en cache.
+    """
+    key = (str(Path(source).resolve()), corner)
+    if key not in _FACECAM_CACHE:
+        from minavio.core import ffmpeg
+
+        duration = ffmpeg.probe(Path(source)).duration
+        _FACECAM_CACHE[key] = detect_facecam(
+            Path(source), 0.0, duration, corner, n_frames=FACECAM_SOURCE_FRAMES
+        )
+    return _FACECAM_CACHE[key]
+
+
 @dataclass
 class ClipReframe:
     mode: str  # mode effectif (après repli éventuel de split_facecam)
@@ -842,7 +867,7 @@ def plan_clip(
     plan = ClipReframe(mode=mode, zoom=zoom, split_ratio=cfg.split_ratio)
     if mode == "split_facecam":
         try:
-            plan.facecam = detect_facecam(source, start, end, cfg.corner)
+            plan.facecam = facecam_for_source(source, cfg.corner)
         except Exception as e:
             log.warning("split_facecam : échec de la détection (%s)", e)
         if plan.facecam is None:
