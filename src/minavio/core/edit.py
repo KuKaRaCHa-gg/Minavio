@@ -102,6 +102,8 @@ def _remap_captions(
         for seg in transcript:
             if seg.end <= clip.start or seg.start >= clip.end:
                 continue
+            if seg.source is not None and seg.source != clip.source:
+                continue
 
             def to_tl(t: float, clip: Clip = clip, offset: float = offset) -> float:
                 return offset + (min(max(t, clip.start), clip.end) - clip.start) / clip.speed
@@ -154,7 +156,7 @@ def plan_timeline(
         beats=[b for b in sorted(beats or []) if 0 <= b <= sum(c.duration for c in clips)],
     )
     if transcript:
-        if len({c.source for c in clips}) > 1:
+        if len({c.source for c in clips}) > 1 and any(s.source is None for s in transcript):
             log.warning(
                 "Transcript sans champ 'source' et plusieurs sources : captions appliquées "
                 "à tous les clips par temps source (risque d'incohérence)."

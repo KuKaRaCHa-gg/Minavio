@@ -5,10 +5,12 @@ Chaque étape écrit `work/<job_id>/<étape>.json` ; avec `resume=True` une éta
 est relue au lieu d'être recalculée (`collect` est toujours rejouée : elle sert à calculer le
 `job_id`). Les modules des autres étapes sont importés paresseusement via `_api`.
 
-Choix transcript : `transcribe.json` stocke `{chemin_source: [segments]}`. Pour `rank` et `copy`
-on passe la concaténation de tous les segments ; pour `plan_timeline`, la concaténation des
-segments des seules sources présentes dans les highlights retenus. Limite : avec plusieurs
-sources, les temps de cette liste ne sont pas distingués par source.
+Transcript : `transcribe.json` stocke `{chemin_source: [segments]}` et chaque segment porte son
+`source`, ce qui permet à `plan_timeline` de rattacher les captions au bon clip en multi-sources.
+
+Popups : `generate_copy` exprime `at` dans la concaténation des highlights qu'il reçoit ; le
+montage réordonne et recoupe ces highlights, donc `remap_popups` convertit `at` en temps de la
+timeline (popup supprimé si son moment n'a pas été retenu).
 """
 
 from __future__ import annotations
@@ -155,8 +157,38 @@ def _copy_to_dict(copy: Any) -> dict[str, Any]:
     return dict(copy)
 
 
+def remap_popups(
+    popups: list[dict[str, Any]], highlights: list[Highlight], timeline: Timeline
+) -> list[tuple[float, str]]:
+    """`at` (concaténation des highlights donnés au copy) -> temps de la timeline."""
+    timed: list[tuple[float, str]] = []
+    for p in popups:
+        at, offset, source_t, source = float(p["at"]), 0.0, None, None
+        for h in highlights:
+            if at < offset + h.duration:
+                source_t, source = h.start + max(0.0, at - offset), h.source
+                break
+            offset += h.duration
+        if source_t is None:
+            continue
+        tl = 0.0
+        for c in timeline.clips:
+            if c.source == source and c.start <= source_t < c.end:
+                timed.append((tl + (source_t - c.start) / c.speed, str(p["text"])))
+                break
+            tl += c.duration / c.speed
+    out: list[tuple[float, str]] = []
+    for t, text in sorted(timed):
+        if not out or t >= out[-1][0] + POPUP_DURATION_S:  # pas de chevauchement
+            out.append((t, text))
+    return out
+
+
 def build_overlays(
-    timeline: Timeline, profile: ChannelProfile, copy: dict[str, Any] | None
+    timeline: Timeline,
+    profile: ChannelProfile,
+    copy: dict[str, Any] | None,
+    highlights: list[Highlight] | None = None,
 ) -> list[Overlay]:
     """Sous-titres (si activés) + titre (hook, 2.5 s au début) + popups du copy."""
     overlays: list[Overlay] = []
@@ -170,18 +202,24 @@ def build_overlays(
                     template="title",
                     start=0,
                     duration=TITLE_DURATION_S,
-                    props={"text": copy["hook"]},
+                    # Titre en haut si les sous-titres occupent déjà le centre.
+                    props={
+                        "text": copy["hook"],
+                        "position": "top" if cap.enabled and cap.position == "center" else "center",
+                    },
                 )
             )
-        for p in copy.get("popups") or []:
-            overlays.append(
-                Overlay(
-                    template="popup",
-                    start=max(0.0, float(p["at"])),
-                    duration=POPUP_DURATION_S,
-                    props={"text": p["text"]},
-                )
-            )
+        popups = copy.get("popups") or []
+        timed = (
+            remap_popups(popups, highlights, timeline)
+            if highlights is not None
+            else [(max(0.0, float(p["at"])), str(p["text"])) for p in popups]
+        )
+        overlays += [
+            Overlay(template="popup", start=t, duration=POPUP_DURATION_S, props={"text": text})
+            for t, text in timed
+            if t < timeline.duration
+        ]
     return overlays
 
 
@@ -205,6 +243,8 @@ def run_job(
 
     profile = load_profile(profile_id)
     fmts = select_formats(profile, formats)
+    if music is not None and not Path(music).is_file():  # échouer avant les étapes longues
+        raise MinavioError(f"Musique introuvable : {music}")
     llm_on = use_llm and profile.llm.enabled
     warnings: list[str] = []
 
@@ -233,7 +273,10 @@ def run_job(
 
     by_source: dict[Path, list[TranscriptSegment]] = steps.run(
         "transcribe",
-        lambda: {s: _api("transcribe")(s) for s in sources},
+        lambda: {
+            s: [seg.model_copy(update={"source": s}) for seg in _api("transcribe")(s)]
+            for s in sources
+        },
         dump=lambda d: {str(k): _dump_models(v) for k, v in d.items()},
         load=lambda d: {
             Path(k): [TranscriptSegment.model_validate(x) for x in v] for k, v in d.items()
@@ -299,7 +342,7 @@ def run_job(
 
     overlays: list[Overlay] = steps.run(
         "overlays",
-        lambda: build_overlays(timeline, profile, copy),
+        lambda: build_overlays(timeline, profile, copy, highlights),
         dump=_dump_models,
         load=lambda d: [Overlay.model_validate(x) for x in d],
         optional=True,

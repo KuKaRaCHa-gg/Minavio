@@ -109,7 +109,7 @@ def find_arcade_font() -> Path | None:
     env = os.environ.get("MINAVIO_FONT")
     if env and Path(env).is_file():
         return Path(env)
-    roots = [motion_dir() / "fonts", Path.home() / ".fonts", Path("/usr/share/fonts")]
+    roots = [motion_dir() / "public" / "fonts", Path.home() / ".fonts", Path("/usr/share/fonts")]
     for root in roots:
         if root.is_dir():
             for pattern in ("PressStart2P*.ttf", "PressStart2P*.otf"):

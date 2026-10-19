@@ -135,3 +135,24 @@ par `ffmpeg -f lavfi`, mock du serveur LLM, `ruff check`).
 4. **Sous-titres** : mot-à-mot style TikTok/Reels, **thème pixel / rétro** sur les 3 chaînes
    (fonte arcade *Press Start 2P* — OFL, via `@remotion/google-fonts` — rendu sans anti-aliasing,
    pop en paliers, contour en blocs). `TranscriptSegment.words` porte les timestamps par mot.
+
+## 10. État après la Phase 3 (intégration)
+
+Les 4 modules sont fusionnés ; `ruff` est propre et les 100 tests passent, dont un test de bout en bout
+(clips synthétiques → `run_job` → MP4 16:9 + 9:16, LLM simulé par un serveur HTTP local).
+Un rendu complet avec Remotion réel (titre, sous-titres et pop-up en ProRes 4444 alpha) a été vérifié.
+
+Corrections d'intégration faites par l'orchestrateur :
+- `TranscriptSegment.source` : les captions sont rattachées au bon clip en multi-sources.
+- `remap_popups` : les `at` du copy (exprimés dans l'ordre des highlights) sont recalés sur la
+  timeline montée ; popups hors montage supprimés, chevauchements filtrés.
+- Fonte *Press Start 2P* embarquée (`motion/public/fonts`, OFL) : rendu Remotion hors ligne.
+- `face_track` : détecteur YuNet embarqué (`core/assets`, Apache-2.0) ; OpenCV 5 ne fournit plus les
+  cascades Haar et MediaPipe 1.x exige un téléchargement de modèle.
+- Titre placé en haut quand les sous-titres sont centrés (The Lost Chat).
+
+Limites connues :
+- Prompts Qwen non encore validés sur le vrai modèle ; ASR faster-whisper jamais chargé ici (pas de GPU).
+- Templates PNG d'Apex Legends à fournir (`configs/games/apex_legends/templates/`) : sans eux,
+  `template_match` est ignoré avec un warning et la détection repose sur l'audio et la voix.
+- `loudnorm` en une passe ; `action_track` = centroïde de mouvement OpenCV.

@@ -147,8 +147,38 @@ def _frames(source: Path, start: float, end: float):
         cap.release()
 
 
+YUNET_MODEL = Path(__file__).parent / "assets" / "face_detection_yunet_2023mar.onnx"
+
+
+def _yunet_detector():
+    """YuNet (OpenCV, Apache-2.0) : modèle embarqué dans le paquet, aucun téléchargement."""
+    import cv2
+
+    if not hasattr(cv2, "FaceDetectorYN") or not YUNET_MODEL.is_file():
+        return None
+    det = cv2.FaceDetectorYN.create(str(YUNET_MODEL), "", (320, 320), 0.7)
+
+    def detect_yunet(frame):
+        h, w = frame.shape[:2]
+        scale = 640 / max(h, w)
+        small = cv2.resize(frame, (round(w * scale), round(h * scale)))
+        det.setInputSize((small.shape[1], small.shape[0]))
+        _, faces = det.detect(small)
+        if faces is None or len(faces) == 0:
+            return None
+        x, _y, fw, _fh = max(faces, key=lambda f: f[14])[:4]  # f[14] = score
+        return float((x + fw / 2) / small.shape[1])
+
+    return detect_yunet
+
+
 def _face_detector():
     """Renvoie une fonction frame -> centre x normalisé | None, ou None si rien de dispo."""
+    try:
+        if (detect := _yunet_detector()) is not None:
+            return detect
+    except Exception as e:
+        log.info("YuNet indisponible (%s) : essai de MediaPipe", e)
     try:
         import mediapipe as mp
 

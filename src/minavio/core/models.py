@@ -41,6 +41,7 @@ class Word(_TimeSpan):
 class TranscriptSegment(_TimeSpan):
     text: str
     speaker: str | None = None
+    source: Path | None = None  # média d'origine ; requis pour les captions multi-sources
     words: list[Word] = Field(default_factory=list)  # requis pour les sous-titres mot-à-mot
 
 

@@ -1,12 +1,21 @@
 import React from 'react';
-import {AbsoluteFill} from 'remotion';
-import {loadFont} from '@remotion/google-fonts/PressStart2P';
+import {AbsoluteFill, continueRender, delayRender, staticFile} from 'remotion';
 
-let pixelFamily = '"Press Start 2P", monospace';
-try {
-  pixelFamily = `${loadFont().fontFamily}, monospace`;
-} catch {
-  // Police indisponible (hors-ligne) : repli monospace.
+// Fonte embarquée (motion/public/fonts, licence OFL) : aucun accès réseau au rendu.
+const PIXEL_FONT = 'Press Start 2P';
+const pixelFamily = `"${PIXEL_FONT}", monospace`;
+
+if (typeof FontFace !== 'undefined') {
+  const handle = delayRender('Chargement de la fonte pixel');
+  const face = new FontFace(
+    PIXEL_FONT,
+    `url('${staticFile('fonts/PressStart2P-Regular.ttf')}') format('truetype')`,
+  );
+  face
+    .load()
+    .then(() => (document.fonts as unknown as {add: (f: FontFace) => void}).add(face))
+    .catch((err) => console.warn('Fonte pixel indisponible, repli monospace', err))
+    .finally(() => continueRender(handle));
 }
 
 export const CLEAN_FAMILY = '"Arial Black", "Helvetica Neue", Arial, sans-serif';

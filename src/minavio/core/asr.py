@@ -49,7 +49,11 @@ def transcribe(source: Path, language: str | None = None) -> list[TranscriptSegm
         words = [w for w in (_word(x) for x in (seg.words or [])) if w is not None]
         out.append(
             TranscriptSegment(
-                start=max(0.0, start), end=end, text=(seg.text or "").strip(), words=words
+                start=max(0.0, start),
+                end=end,
+                text=(seg.text or "").strip(),
+                words=words,
+                source=source,
             )
         )
     return out
