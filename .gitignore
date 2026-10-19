@@ -12,3 +12,6 @@ motion/out/
 *.mov
 *.wav
 !tests/fixtures/**
+
+# worktrees des subagents Claude Code
+.claude/worktrees/
