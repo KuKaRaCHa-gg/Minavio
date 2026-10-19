@@ -119,3 +119,69 @@ def test_face_track_falls_back_with_warning(monkeypatch, testsrc_video, caplog):
     with caplog.at_level("WARNING"):
         assert reframe.compute_crop_path(testsrc_video, 0, 2, "face_track") is None
     assert "crop centré" in caplog.text
+
+
+# --------------------------------------------------------------------------- seek en entrée
+
+
+def test_inputs_are_seeked_before_each_i(testsrc_video, profile, tmp_path):
+    clips = [
+        Clip(source=testsrc_video, start=1.0, end=2.5),
+        Clip(source=testsrc_video, start=3.0, end=5.0, speed=2.0),
+    ]
+    args = render.build_command(
+        timeline(testsrc_video, clips=clips), fmt(), tmp_path / "o.mp4", profile
+    )
+    idx = [k for k, a in enumerate(args) if a == "-i"]
+    assert len(idx) == 2
+    for k, c in zip(idx, clips, strict=True):
+        assert args[k - 4 : k] == ["-ss", f"{c.start:.4f}", "-t", f"{c.duration:.4f}"]
+    graph = args[args.index("-filter_complex") + 1]
+    assert "trim=" not in graph and "atrim=start" not in graph
+    assert "[0:v]setpts=PTS-STARTPTS[t0]" in graph and "asetpts=PTS-STARTPTS" in graph
+    assert "atempo=2.00000" in graph and "setpts=PTS/2.00000" in graph
+
+
+def test_rendered_duration_matches_timeline(testsrc_video, profile, tmp_path):
+    clips = [
+        Clip(source=testsrc_video, start=0.5, end=1.5),
+        Clip(source=testsrc_video, start=2.0, end=3.2, speed=2.0),
+        Clip(source=testsrc_video, start=4.0, end=5.3),
+    ]
+    tl = timeline(testsrc_video, clips=clips)
+    out = render.render_timeline(tl, fmt(), tmp_path / "d.mp4", profile)
+    assert ffmpeg.probe(out).duration == pytest.approx(tl.duration, abs=len(clips) / 30)
+
+
+def test_flash_and_beep_stay_in_sync(media_dir, profile, tmp_path):
+    from tests.core.helpers import ff
+
+    src = media_dir / "sync.mp4"
+    ff(
+        *("-f", "lavfi", "-i", "color=c=black:s=160x90:r=30:d=8"),
+        *("-f", "lavfi", "-i", "aevalsrc='0.8*sin(2*PI*1000*t)*between(t,4,4.2)':s=48000:d=8"),
+        *("-vf", "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='between(t,4,4.2)'"),
+        *("-c:v", "libx264", "-preset", "ultrafast", "-g", "60", "-pix_fmt", "yuv420p"),
+        *("-c:a", "aac", "-b:a", "192k", str(src)),
+    )
+    clips = [Clip(source=src, start=2.5, end=3.0), Clip(source=src, start=3.5, end=6.0)]
+    # le flash (4.0 s source) tombe à 0.5 + 0.5 = 1.0 s dans la sortie
+    out = render.render_timeline(
+        timeline(src, clips=clips), fmt(w=160, h=90), tmp_path / "s.mp4", profile
+    )
+    import subprocess
+
+    import numpy as np
+
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(out), "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        capture_output=True,
+        check=True,
+    ).stdout
+    frames = np.frombuffer(raw, np.uint8).reshape(-1, 90, 160)
+    t_video = int(np.argmax(frames.mean(axis=(1, 2)) > 128)) / 30
+    pcm = ffmpeg.decode_pcm(out, 16000)
+    t_audio = int(np.argmax(np.abs(pcm) > 0.2)) / 16000
+    assert t_video == pytest.approx(1.0, abs=2 / 30)
+    assert t_audio == pytest.approx(1.0, abs=0.06)
+    assert abs(t_video - t_audio) < 0.06

@@ -188,3 +188,31 @@ def test_merge_keeps_signals_max_per_key():
                   detector="audio_peak", signals={"loudness_z": 2.5})  # fmt: skip
     (m,) = merge_highlights([a, b])
     assert m.signals == {"laughter": 0.9, "loudness_z": 2.5}
+
+
+def test_pitch_blocks_match_unsplit_pyin_and_skip_silence(monkeypatch):
+    import librosa
+
+    sr, hop = prosody.SAMPLE_RATE, prosody._HOP
+    t = np.arange(70 * sr) / sr
+    f = np.where((t // 5) % 2 == 0, 220.0, 330.0)
+    y = (0.3 * np.sin(2 * np.pi * np.cumsum(f) / sr)).astype(np.float32)
+    y[int(40 * sr) : int(52 * sr)] = 0.0
+    ref, _, _ = librosa.pyin(y, fmin=65, fmax=800, sr=sr, hop_length=hop)
+
+    calls = []
+    real = librosa.pyin
+    monkeypatch.setattr(librosa, "pyin", lambda seg, **k: calls.append(seg.size) or real(seg, **k))
+    got = prosody._pitch_f0(y)
+    assert got.shape == ref.shape
+    both = ~np.isnan(ref) & ~np.isnan(got)
+    assert both.sum() > 0.5 * got.size
+    assert np.mean(np.abs(got[both] - ref[both]) / ref[both] < 0.02) > 0.99
+    assert np.mean(np.isnan(got) == np.isnan(ref)) > 0.99
+    # mémoire bornée : jamais plus de bloc + 2 chevauchements
+    limit = round((prosody.PITCH_BLOCK_S + 2 * prosody.PITCH_OVERLAP_S) * sr) + 2 * hop
+    assert calls and max(calls) <= limit
+
+    calls.clear()
+    assert np.isnan(prosody._pitch_f0(np.zeros(70 * sr, np.float32))).all()
+    assert calls == []

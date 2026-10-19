@@ -53,7 +53,7 @@ def _clip_segments(
 ) -> list[str]:
     dur = clip.duration / clip.speed
     seg = [
-        f"[{i}:v]trim=start={clip.start:.4f}:end={clip.end:.4f},setpts=PTS-STARTPTS[t{i}]",
+        f"[{i}:v]setpts=PTS-STARTPTS[t{i}]",
         *reframe.build_reframe(
             plan.mode,
             f"t{i}",
@@ -75,7 +75,6 @@ def _clip_segments(
         chain = ",".join(
             p
             for p in (
-                f"atrim=start={clip.start:.4f}:end={clip.end:.4f}",
                 "asetpts=PTS-STARTPTS",
                 tempo,
                 f"aresample={SAMPLE_RATE}",
@@ -107,7 +106,8 @@ def build_command(
     infos = {s: ffmpeg.probe(s) for s in {c.source for c in clips}}
     args: list[str] = []
     for c in clips:
-        args += ["-i", str(c.source)]
+        # seek en entrée : chaque entrée ne décode que son fragment (pas depuis t=0)
+        args += ["-ss", f"{c.start:.4f}", "-t", f"{c.duration:.4f}", "-i", str(c.source)]
     n = len(clips)
 
     graph: list[str] = []
