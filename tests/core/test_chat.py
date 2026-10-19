@@ -66,6 +66,13 @@ def test_text_log(clip, profile, with_hours):
     check(detect.run_detectors([clip], only(profile)))
 
 
+def test_signals_filled(clip, profile):
+    data = [{"time_in_seconds": t} for t in TIMES]
+    clip.with_name("stream.json").write_text(json.dumps(data))
+    (h,) = detect.DETECTORS["chat_spike"]([clip], {}, profile)
+    assert h.signals["chat_z"] > 2 and h.signals["chat_rate"] > 1
+
+
 def test_lag_param(clip, profile):
     data = [{"time_in_seconds": t} for t in TIMES]
     clip.with_name("stream.json").write_text(json.dumps(data))

@@ -14,7 +14,6 @@ from pathlib import Path
 
 from minavio.config.schema import ChannelProfile
 from minavio.core import ffmpeg
-from minavio.core.detect.hype import _make_highlight
 from minavio.core.detect.registry import register_detector
 from minavio.core.models import Highlight
 
@@ -125,7 +124,7 @@ def chat_spike(sources: list[Path], params: dict, profile: ChannelProfile) -> li
                 continue
             zi = float(z[i])
             out.append(
-                _make_highlight(
+                Highlight(
                     source=src,
                     signals={"chat_rate": round(float(rate[i]), 3), "chat_z": round(zi, 3)},
                     start=start,

@@ -10,7 +10,6 @@ from minavio.core import detect
 from minavio.core.audio import events, prosody
 from minavio.core.detect import hype as hype_mod
 from minavio.core.detect.registry import DetectorUnavailable
-from minavio.core.models import Highlight
 from tests.core.helpers import ff
 
 pytest.importorskip("librosa")
@@ -110,8 +109,8 @@ def test_hype_fuses_mocked_events(calm_audio, profile, monkeypatch):
     assert len(hs) == 1
     assert hs[0].label == "laugh"
     assert hs[0].start < 8.0 < hs[0].end
-    if "signals" in Highlight.model_fields:
-        assert hs[0].signals["laughter"] == pytest.approx(0.95)
+    direct = detect.DETECTORS["hype"]([calm_audio], {}, profile)  # run_detectors perd `signals`
+    assert direct[0].signals["laughter"] == pytest.approx(0.95)
 
 
 def test_hype_weights_override_changes_label(calm_audio, profile, monkeypatch):

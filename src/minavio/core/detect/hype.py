@@ -52,16 +52,6 @@ def _warn_once(key: str, msg: str) -> None:
         log.warning(msg)
 
 
-def _make_highlight(**kw) -> Highlight:
-    """Renseigne `signals` si le contrat `Highlight` le porte (sinon repli dans `reason`)."""
-    signals = kw.pop("signals")
-    if "signals" in Highlight.model_fields:
-        return Highlight(**kw, signals=signals)
-    reason = kw.pop("reason", "") or ""
-    detail = ", ".join(f"{k}={v:.2f}" for k, v in signals.items())
-    return Highlight(**kw, reason=f"{reason} [{detail}]".strip())
-
-
 def _collect(source: Path, window_s: float, params: dict):
     """Signaux par fenêtre : (n_fenêtres, {nom: liste}). Lève DetectorUnavailable si rien."""
     from minavio.core.audio import events, prosody
@@ -161,7 +151,7 @@ def hype(sources: list[Path], params: dict, profile: ChannelProfile) -> list[Hig
                     signals = {nm: round(float(raw[r, peak_i]), 3) for r, nm in enumerate(names)}
                     signals["fused"] = round(peak, 3)
                     out.append(
-                        _make_highlight(
+                        Highlight(
                             source=src,
                             start=start,
                             end=end,
