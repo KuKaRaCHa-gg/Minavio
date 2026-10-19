@@ -110,3 +110,18 @@ test e2e étendu → push. `main` n'avance que sur un lot validé.
 2. As-tu accès aux **logs de chat** des VODs pour The Lost Chat (sinon on ignore ce signal) ?
 3. OK pour un **jeton Hugging Face** (diarization pyannote) ou on s'en passe ?
 4. Ordre des lots ci-dessus OK, ou miniatures en priorité ?
+
+---
+
+## État — lot 4.1 livré (sur `main`)
+
+- Autocut (`core/autocut.py`) : plancher de silence absolu −45 dBFS, mots transcrits protégés, interjections
+  courtes fusionnées ; activé fort sur The Lost Chat, moyen sur Byte Tricks, léger sur Minivitch.
+- Détecteurs `hype` (PANNs + prosodie, `signals` conservés à la fusion) et `chat_spike` (log de chat
+  optionnel à côté du clip).
+- Cadrage : One Euro + zone morte + pan borné + reset aux cuts ; `split_facecam` pour The Lost Chat
+  (coin auto, une détection par source, repli `face_track`) ; punch-in.
+- Rendu : seek en entrée par clip (~22× plus rapide sur des fragments loin dans la source).
+- Revue `orchestrator` : 7 bugs trouvés, tous corrigés avec tests de non-régression.
+
+Reporté au lot 4.2 : `speech_rate_z` du détecteur hype (nécessite la transcription avant la détection).
