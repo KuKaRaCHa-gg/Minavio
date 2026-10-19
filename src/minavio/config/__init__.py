@@ -59,3 +59,7 @@ def load_profile(profile_id: str, config_dir: Path = CONFIG_DIR) -> ChannelProfi
     for game_id in profile.games:
         load_game(game_id, config_dir)
     return profile
+
+
+def list_games(config_dir: Path = CONFIG_DIR) -> list[str]:
+    return sorted(p.parent.name for p in (config_dir / "games").glob("*/game.yaml"))
