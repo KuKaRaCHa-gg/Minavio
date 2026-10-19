@@ -23,9 +23,9 @@ llm:
   max_highlights: 15
 
 motion:
-  theme: { primary: "#BF5AF2", accent: "#FF9F0A", font: "Montserrat ExtraBold" }
+  theme: { primary: "#BF5AF2", accent: "#FF9F0A", font: "Press Start 2P" }
   templates: [title, reaction, captions]
-  captions: { enabled: true, word_by_word: true, position: center }
+  captions: { enabled: true, word_by_word: true, position: center, style: pixel }
 
 editing:
   pacing: hyper

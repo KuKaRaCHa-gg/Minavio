@@ -33,9 +33,15 @@ class _TimeSpan(_Model):
         return self.end - self.start
 
 
+class Word(_TimeSpan):
+    text: str
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
 class TranscriptSegment(_TimeSpan):
     text: str
     speaker: str | None = None
+    words: list[Word] = Field(default_factory=list)  # requis pour les sous-titres mot-à-mot
 
 
 class Highlight(_TimeSpan):

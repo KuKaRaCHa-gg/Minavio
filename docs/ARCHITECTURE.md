@@ -124,3 +124,14 @@ par `ffmpeg -f lavfi`, mock du serveur LLM, `ruff check`).
 3. **Sources** : fichiers locaux uniquement, ou aussi téléchargement (VOD
    Twitch/YouTube via `yt-dlp`) pour The Lost Chat ?
 4. **Sous-titres** : animés mot-à-mot (style TikTok) pour les 3 chaînes ?
+
+## 9. Décisions validées (2026-10-19)
+
+1. **Motion** : Remotion.
+2. **LLM** : serveur local déjà installé par l'utilisateur ; client OpenAI-compatible, `base_url` et
+   `model` réglables par YAML ou `MINAVIO_LLM_BASE_URL` / `MINAVIO_LLM_MODEL`.
+3. **Sources** : clips enregistrés en local par un outil de capture (Outplayed) ; `minavio run`
+   accepte des fichiers et des dossiers. Pas de téléchargement.
+4. **Sous-titres** : mot-à-mot style TikTok/Reels, **thème pixel / rétro** sur les 3 chaînes
+   (fonte arcade *Press Start 2P* — OFL, via `@remotion/google-fonts` — rendu sans anti-aliasing,
+   pop en paliers, contour en blocs). `TranscriptSegment.words` porte les timestamps par mot.

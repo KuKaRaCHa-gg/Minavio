@@ -24,9 +24,9 @@ llm:
   max_highlights: 12
 
 motion:
-  theme: { primary: "#FF3B30", accent: "#FFD60A", font: "Bebas Neue" }
+  theme: { primary: "#FF3B30", accent: "#FFD60A", font: "Press Start 2P" }
   templates: [title, popup, reaction, captions]
-  captions: { enabled: true, word_by_word: true, position: bottom }
+  captions: { enabled: true, word_by_word: true, position: bottom, style: pixel }
 
 editing:
   pacing: hyper

@@ -22,9 +22,9 @@ llm:
   max_highlights: 6
 
 motion:
-  theme: { primary: "#0A84FF", accent: "#30D158", font: "JetBrains Mono" }
+  theme: { primary: "#0A84FF", accent: "#30D158", font: "Press Start 2P" }
   templates: [title, popup, progress_bar, captions]
-  captions: { enabled: true, word_by_word: true, position: bottom }
+  captions: { enabled: true, word_by_word: true, position: bottom, style: pixel }
 
 editing:
   pacing: dynamic

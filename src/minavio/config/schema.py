@@ -73,6 +73,8 @@ class CaptionStyle(_Model):
     enabled: bool = True
     word_by_word: bool = True
     position: Literal["top", "center", "bottom"] = "bottom"
+    style: Literal["pixel", "clean"] = "pixel"  # pixel = fonte arcade, pop rétro, contour en blocs
+    max_words_per_line: int = Field(default=3, gt=0)
 
 
 class MotionSettings(_Model):
