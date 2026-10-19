@@ -14,7 +14,8 @@ dependencies = [
 vision = ["opencv-python-headless>=4.9", "mediapipe>=0.10"]
 audio = ["librosa>=0.10", "silero-vad>=5.1", "onnxruntime>=1.18"]
 asr = ["faster-whisper>=1.0"]
-all = ["minavio[vision,audio,asr]"]
+hype = ["panns-inference>=0.1", "torch>=2.3"]
+all = ["minavio[vision,audio,asr,hype]"]
 
 [project.scripts]
 minavio = "minavio.cli:app"

@@ -1,6 +1,13 @@
 """Détecteurs de moments forts (plugins enregistrés par nom)."""
 
-from minavio.core.detect import audio_peak, scene_change, speech, template_match
+from minavio.core.detect import (
+    audio_peak,
+    chat_spike,
+    hype,
+    scene_change,
+    speech,
+    template_match,
+)
 from minavio.core.detect.registry import (
     DETECTORS,
     DetectorUnavailable,
@@ -13,6 +20,8 @@ __all__ = [
     "DETECTORS",
     "DetectorUnavailable",
     "audio_peak",
+    "chat_spike",
+    "hype",
     "merge_highlights",
     "register_detector",
     "run_detectors",
