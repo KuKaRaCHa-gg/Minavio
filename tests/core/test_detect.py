@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 import yaml
-from helpers import H, W, ff
 
 from minavio import config
 from minavio.config.schema import ChannelProfile, DetectorRef
 from minavio.core import detect
 from minavio.core.models import Highlight
+from tests.core.helpers import H, W, ff
 
 
 def only(profile: ChannelProfile, *refs: DetectorRef, **kw) -> ChannelProfile:

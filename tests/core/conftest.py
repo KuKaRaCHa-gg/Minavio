@@ -6,10 +6,10 @@ import shutil
 from pathlib import Path
 
 import pytest
-from helpers import H, W, ff
 
 from minavio.config import load_profile
 from minavio.config.schema import ChannelProfile
+from tests.core.helpers import H, W, ff
 
 if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
     pytest.skip("ffmpeg/ffprobe requis", allow_module_level=True)
