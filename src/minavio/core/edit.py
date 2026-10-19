@@ -14,6 +14,9 @@ log = logging.getLogger("minavio.edit")
 # Tolérance (s) pour aligner une coupe sur le beat le plus proche, selon le pacing.
 BEAT_TOLERANCE_S = {"calm": 0.25, "dynamic": 0.2, "hyper": 0.15}
 _MIN_CAPTION_S = 0.05
+MIN_FRAGMENT_S = 0.25  # sous-clips plus courts que ça (après autocut) : ignorés
+
+KeepSpans = dict[Path, list[tuple[float, float]]]
 
 
 class _Window:
@@ -61,13 +64,35 @@ def _windows(highlights: list[Highlight], profile: ChannelProfile) -> list[_Wind
     return merged
 
 
-def _select(windows: list[_Window], target: float) -> list[_Window]:
+def _fragments(w: _Window, keep_spans: KeepSpans | None) -> list[tuple[float, float]]:
+    """Sous-intervalles de la fenêtre à garder (fragments < MIN_FRAGMENT_S ignorés)."""
+    spans = keep_spans.get(w.source) if keep_spans else None
+    if spans is None:
+        return [(w.start, w.end)]
+    out = []
+    for s, e in sorted(spans):
+        s, e = max(s, w.start), min(e, w.end)
+        if e - s >= MIN_FRAGMENT_S:
+            out.append((s, e))
+    return out
+
+
+def _effective(w: _Window, keep_spans: KeepSpans | None) -> float:
+    return sum(e - s for s, e in _fragments(w, keep_spans))
+
+
+def _select(
+    windows: list[_Window], target: float, keep_spans: KeepSpans | None = None
+) -> list[_Window]:
+    if keep_spans:  # une fenêtre entièrement coupée disparaît
+        windows = [w for w in windows if _fragments(w, keep_spans)]
     chosen: list[_Window] = []
     total = 0.0
     for w in sorted(windows, key=lambda x: -x.score):
-        if total + w.duration <= target:
+        dur = _effective(w, keep_spans)
+        if total + dur <= target:
             chosen.append(w)
-            total += w.duration
+            total += dur
         elif not chosen:  # au moins un clip, tronqué à la durée cible
             w.end = w.start + target
             chosen.append(w)
@@ -75,22 +100,32 @@ def _select(windows: list[_Window], target: float) -> list[_Window]:
     return sorted(chosen, key=lambda x: (str(x.source), x.start))
 
 
-def _snap(windows: list[_Window], beats: list[float], profile: ChannelProfile) -> None:
+def _snap(
+    windows: list[_Window],
+    beats: list[float],
+    profile: ChannelProfile,
+    keep_spans: KeepSpans | None = None,
+) -> None:
     """Aligne chaque coupe de fin sur le beat le plus proche (dans la tolérance du pacing)."""
     ed = profile.editing
     tol = BEAT_TOLERANCE_S[ed.pacing]
     sorted_beats = sorted(beats)
     t = 0.0
     for w in windows:
-        cut = t + w.duration
+        eff = _effective(w, keep_spans)
+        cut = t + eff
         i = bisect.bisect_left(sorted_beats, cut)
         cands = sorted_beats[max(0, i - 1) : i + 1]
         if cands:
             beat = min(cands, key=lambda b: abs(b - cut))
             new_dur = w.duration + (beat - cut)
             if abs(beat - cut) <= tol and ed.min_clip_s <= new_dur <= ed.max_clip_s:
+                old_end = w.end
                 w.end = w.start + new_dur
-        t += w.duration
+                # avec autocut, la fin déplacée peut tomber dans un creux : on vérifie le résultat
+                if keep_spans and abs(t + _effective(w, keep_spans) - beat) > 1e-6:
+                    w.end = old_end
+        t += _effective(w, keep_spans)
 
 
 def _remap_captions(
@@ -139,15 +174,23 @@ def plan_timeline(
     beats: list[float] | None = None,
     music: Path | None = None,
     transcript: list[TranscriptSegment] | None = None,
+    keep_spans: KeepSpans | None = None,
 ) -> Timeline:
-    """Highlights -> Timeline (pre/post roll, bornes, durée cible, snap beats, captions)."""
-    windows = _select(_windows(highlights, profile), profile.editing.target_duration_s)
-    if beats and profile.audio.beat_sync:
-        _snap(windows, beats, profile)
+    """Highlights -> Timeline (pre/post roll, bornes, durée cible, snap beats, captions).
 
-    clips = [
-        Clip(source=w.source, start=w.start, end=w.end, highlight_label=w.label) for w in windows
-    ]
+    `keep_spans` (autocut) : chaque fenêtre est éclatée en sous-clips sur les intervalles gardés ;
+    seuls les bords externes sont snappés sur les beats.
+    """
+    windows = _select(_windows(highlights, profile), profile.editing.target_duration_s, keep_spans)
+    if beats and profile.audio.beat_sync:
+        _snap(windows, beats, profile, keep_spans)
+
+    punch = profile.editing.autocut.punch_in
+    clips: list[Clip] = []
+    for w in windows:
+        for k, (s, e) in enumerate(_fragments(w, keep_spans)):
+            zoom = punch if punch > 1 and k % 2 == 1 else 1.0
+            clips.append(Clip(source=w.source, start=s, end=e, highlight_label=w.label, zoom=zoom))
     timeline = Timeline(
         profile_id=profile.id,
         fps=profile.outputs[0].fps,
