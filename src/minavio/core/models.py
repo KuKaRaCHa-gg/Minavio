@@ -53,6 +53,8 @@ class Highlight(_TimeSpan):
     label: str  # ex. "kill", "clutch", "laugh", "fun_fact"
     detector: str
     reason: str | None = None
+    # Explicabilité : contribution de chaque signal (ex. {"laughter": 0.8, "loudness_z": 2.1}).
+    signals: dict[str, float] = Field(default_factory=dict)
 
 
 class Overlay(_Model):
@@ -68,6 +70,7 @@ class Clip(_TimeSpan):
     source: Path
     speed: float = Field(default=1.0, gt=0)
     highlight_label: str | None = None
+    zoom: float = Field(default=1.0, ge=1.0, le=2.0)  # punch-in centré (masque les jump-cuts)
 
 
 class Timeline(_Model):

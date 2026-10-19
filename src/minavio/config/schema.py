@@ -83,7 +83,20 @@ class MotionSettings(_Model):
     captions: CaptionStyle = Field(default_factory=CaptionStyle)
 
 
+class AutocutSettings(_Model):
+    """Suppression des creux : ne coupe que ce qui n'est ni de la voix ni de l'action."""
+
+    enabled: bool = False
+    min_silence_s: float = Field(default=0.5, gt=0)  # creux plus courts conservés
+    margin_before_s: float = Field(default=0.12, ge=0)  # avant la reprise de la voix
+    margin_after_s: float = Field(default=0.25, ge=0)  # après la fin de la voix
+    energy_percentile: float = Field(default=20, ge=0, le=100)  # base du seuil adaptatif
+    energy_margin_db: float = Field(default=6, ge=0)  # au-dessus de la base = action, gardé
+    punch_in: float = Field(default=1.0, ge=1.0, le=1.3)  # zoom alterné aux jump-cuts
+
+
 class EditingSettings(_Model):
+    autocut: AutocutSettings = Field(default_factory=AutocutSettings)
     pacing: Pacing = "dynamic"
     target_duration_s: float = Field(gt=0)
     min_clip_s: float = Field(default=1.5, gt=0)
@@ -98,6 +111,20 @@ class EditingSettings(_Model):
         return self
 
 
+class SmoothingSettings(_Model):
+    """Caméra virtuelle 9:16 : One Euro filter + zone morte + vitesse de pan bornée."""
+
+    min_cutoff: float = Field(default=0.3, gt=0)  # Hz ; plus bas = plus stable
+    beta: float = Field(default=0.02, ge=0)  # réactivité aux mouvements rapides
+    dead_zone: float = Field(default=0.04, ge=0, le=0.5)  # fraction de largeur ignorée
+    max_pan_per_s: float = Field(default=0.35, gt=0)  # fraction de largeur par seconde
+    reset_on_scene_cut: bool = True
+
+
+class FramingSettings(_Model):
+    smoothing: SmoothingSettings = Field(default_factory=SmoothingSettings)
+
+
 class ChannelProfile(_Model):
     id: str
     display_name: str
@@ -110,6 +137,7 @@ class ChannelProfile(_Model):
     llm: LlmSettings
     motion: MotionSettings = Field(default_factory=MotionSettings)
     editing: EditingSettings
+    framing: FramingSettings = Field(default_factory=FramingSettings)
 
 
 class UiTemplate(_Model):
