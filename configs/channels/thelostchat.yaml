@@ -1,3 +1,14 @@
+# Profil de chaîne (schéma : `minavio schema`, validation : `minavio profiles validate`).
+# Champs clés :
+#   games      ids de configs/games/<id>/ utilisés par le détecteur template_match.
+#   outputs    formats rendus (name, aspect, résolution, fps, reframe, max_duration_s) ;
+#              sélectionnables avec `minavio run --format <name|aspect>`.
+#   detection  détecteurs et poids (weight) qui pondèrent le score des highlights.
+#   audio      music_dir (musique choisie de façon déterministe), beat_sync, loudness, ducking.
+#   llm        prompt (fichier de src/minavio/llm/prompts/), max_highlights ;
+#              base_url/model surchargés par MINAVIO_LLM_BASE_URL / MINAVIO_LLM_MODEL.
+#   motion     theme (couleurs, fonte), templates Remotion, style des sous-titres mot-à-mot.
+#   editing    pacing, durée cible, bornes de clip, pre/post-roll autour de chaque moment.
 id: thelostchat
 display_name: The Lost Chat
 content_type: stream_bestof
