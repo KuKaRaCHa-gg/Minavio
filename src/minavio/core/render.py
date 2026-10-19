@@ -48,20 +48,25 @@ def fit_clips(clips: list[Clip], max_duration: float | None) -> list[Clip]:
     return out
 
 
-def _clip_segments(i: int, clip: Clip, info, fmt: OutputFormat, path) -> list[str]:
+def _clip_segments(
+    i: int, clip: Clip, info, fmt: OutputFormat, plan: reframe.ClipReframe
+) -> list[str]:
     dur = clip.duration / clip.speed
     seg = [
         f"[{i}:v]trim=start={clip.start:.4f}:end={clip.end:.4f},setpts=PTS-STARTPTS[t{i}]",
         *reframe.build_reframe(
-            fmt.reframe,
+            plan.mode,
             f"t{i}",
             f"r{i}",
             info.width,
             info.height,
             fmt.width,
             fmt.height,
-            path,
+            plan.path,
             f"c{i}",
+            zoom=plan.zoom,
+            facecam=plan.facecam,
+            split_ratio=plan.split_ratio,
         ),
         f"[r{i}]setpts=PTS/{clip.speed:.5f},fps={fmt.fps},format=yuv420p[v{i}]",
     ]
@@ -107,12 +112,8 @@ def build_command(
 
     graph: list[str] = []
     for i, c in enumerate(clips):
-        path = (
-            reframe.compute_crop_path(c.source, c.start, c.end, fmt.reframe)
-            if fmt.reframe in {"face_track", "action_track"}
-            else None
-        )
-        graph += _clip_segments(i, c, infos[c.source], fmt, path)
+        plan = reframe.plan_clip(c.source, c.start, c.end, fmt.reframe, c.zoom, profile.framing)
+        graph += _clip_segments(i, c, infos[c.source], fmt, plan)
     graph.append("".join(f"[v{i}][a{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=1[vcat][voice]")
 
     # overlays (index du dict = index dans timeline.overlays)
