@@ -175,3 +175,16 @@ def test_remap_popups_follows_montage_order():
     popups = [{"at": 1.0, "text": "B"}, {"at": 4.5, "text": "A"}, {"at": 50, "text": "X"}]
     # B : 21 s dans b -> 4 (clip a) + 2 = 6 ; A : 10.5 s dans a -> 1.5
     assert pipeline.remap_popups(popups, hl, tl) == [(1.5, "A"), (6.0, "B")]
+
+
+def test_remap_popups_snaps_out_of_autocut_gap():
+    a = Path("a.mp4")
+    hl = [Highlight(source=a, start=10, end=20, score=0.9, label="kill", detector="x")]
+    # L'autocut a retiré 12..14 : le popup à 13 s glisse au début du passage gardé suivant.
+    tl = Timeline(
+        profile_id="t",
+        fps=30,
+        clips=[{"source": a, "start": 10, "end": 12}, {"source": a, "start": 14, "end": 20}],
+    )
+    assert pipeline.remap_popups([{"at": 3.0, "text": "K"}], hl, tl) == [(2.0, "K")]
+    assert pipeline.remap_popups([{"at": 9.5, "text": "far"}], hl, tl) == [(7.5, "far")]

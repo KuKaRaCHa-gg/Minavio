@@ -39,6 +39,7 @@ log = logging.getLogger("minavio.pipeline")
 
 TITLE_DURATION_S = 2.5
 POPUP_DURATION_S = 2.0
+POPUP_SNAP_S = 2.0
 AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".aac"}
 
 _API = {
@@ -177,12 +178,19 @@ def remap_popups(
             offset += h.duration
         if source_t is None:
             continue
+        # Clip contenant l'instant ; sinon (instant retiré par l'autocut) le passage gardé le plus
+        # proche de la même source, à moins de POPUP_SNAP_S.
+        best: tuple[float, float] | None = None  # (distance, temps timeline)
         tl = 0.0
         for c in timeline.clips:
-            if c.source == source and c.start <= source_t < c.end:
-                timed.append((tl + (source_t - c.start) / c.speed, str(p["text"])))
-                break
+            if c.source == source:
+                t_src = min(max(source_t, c.start), c.end - 1e-3)
+                dist = abs(t_src - source_t)
+                if dist <= POPUP_SNAP_S and (best is None or dist < best[0]):
+                    best = (dist, tl + (t_src - c.start) / c.speed)
             tl += c.duration / c.speed
+        if best is not None:
+            timed.append((best[1], str(p["text"])))
     out: list[tuple[float, str]] = []
     for t, text in sorted(timed):
         if not out or t >= out[-1][0] + POPUP_DURATION_S:  # pas de chevauchement
