@@ -116,3 +116,51 @@ def test_real_silero(audio):
     assert spans and spans == sorted(spans)
     # le bruit fort (4-5 s) est de l'action : toujours gardé, quel que soit le verdict du VAD
     assert any(a <= 4.1 and b >= 4.9 for a, b in spans)
+
+
+def test_stable_ambience_is_not_cut(tmp_path):
+    """Ambiance de jeu stable (~-30 dBFS), sans voix : rien n'est du silence."""
+    out = tmp_path / "ambience.mkv"
+    ff(
+        *("-f", "lavfi", "-i", "color=c=black:s=64x64:r=10:d=6"),
+        *("-f", "lavfi", "-i", "anoisesrc=d=6:a=0.05:r=16000"),
+        *("-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p"),
+        *("-c:a", "pcm_s16le", str(out)),
+    )
+    import numpy as np
+
+    from minavio.core.ffmpeg import decode_pcm
+
+    rms = float(np.sqrt(np.mean(decode_pcm(out, 16000) ** 2)))
+    assert -40 < 20 * np.log10(rms) < -20
+    spans = analyze_keep_spans(out, AutocutSettings(), None)
+    _close(spans, [(0.0, 6.0)])
+
+
+def test_fully_silent_audio_never_returns_empty(tmp_path, monkeypatch, caplog):
+    out = tmp_path / "silent.mkv"
+    ff(
+        *("-f", "lavfi", "-i", "color=c=black:s=64x64:r=10:d=3"),
+        *("-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono:d=3"),
+        *("-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p"),
+        *("-c:a", "pcm_s16le", str(out)),
+    )
+    monkeypatch.setattr(autocut, "detect_speech", lambda path: [])
+    with caplog.at_level("INFO"):
+        spans = analyze_keep_spans(out, AutocutSettings())
+    _close(spans, [(0.0, 3.0)])
+    assert "conservation intégrale" in caplog.text
+
+
+def test_word_fully_inside_cut_is_protected(audio, fake_vad):
+    s = AutocutSettings()
+    word = TranscriptSegment(
+        start=3.0, end=3.2, text="psst", words=[Word(start=3.0, end=3.2, text="psst")]
+    )
+    spans = analyze_keep_spans(audio, s, transcript=[word])
+    assert any(
+        a <= 3.0 - s.margin_before_s + 1e-6 and b >= 3.2 + s.margin_after_s - 1e-6 for a, b in spans
+    )
+    # la coupe se scinde : le morceau >= min_silence_s reste coupé, le reste est gardé
+    assert len(spans) == 3
+    _close(spans, [(0, 2.25), (2.88, 5.25), (6.88, 8.0)])

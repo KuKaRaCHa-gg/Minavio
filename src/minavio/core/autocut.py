@@ -15,6 +15,9 @@ log = logging.getLogger("minavio.autocut")
 SAMPLE_RATE = 16000
 FRAME_S = 0.05
 _EPS = 1e-9
+# Plancher absolu (dBFS) : une trame plus forte n'est jamais du silence, même si le seuil relatif
+# (percentile + marge) est plus haut. Évite de tout couper sur une ambiance stable sans voix.
+SILENCE_FLOOR_DBFS = -45.0
 
 
 def _frame_energy_db(pcm) -> list[float]:
@@ -50,18 +53,43 @@ def _words(source: Path, transcript: list[TranscriptSegment] | None) -> list[tup
 
 
 def _protect_words(
-    cuts: list[tuple[float, float]], words: list[tuple[float, float]]
+    cuts: list[tuple[float, float]],
+    words: list[tuple[float, float]],
+    settings: AutocutSettings,
 ) -> list[tuple[float, float]]:
-    """Réduit chaque coupe pour qu'aucun de ses bords ne tombe à l'intérieur d'un mot."""
-    out = []
+    """Protège les mots transcrits : aucun bord de coupe dans un mot, aucun mot dans une coupe.
+
+    Un mot entièrement contenu dans une coupe (chuchotement raté par la VAD) retire de la coupe
+    l'intervalle [début - margin_before_s, fin + margin_after_s] ; la coupe peut se scinder, les
+    morceaux plus courts que `min_silence_s` ne sont plus coupés.
+    """
+    out: list[tuple[float, float]] = []
     for s, e in cuts:
         for ws, we in words:
             if ws < s < we:
                 s = we
             if ws < e < we:
                 e = ws
-        if e - s > 1e-6:
-            out.append((s, e))
+        if e - s <= 1e-6:
+            continue
+        pieces = [(s, e)]
+        for ws, we in words:
+            if ws >= s and we <= e:
+                lo, hi = ws - settings.margin_before_s, we + settings.margin_after_s
+                nxt: list[tuple[float, float]] = []
+                for ps, pe in pieces:
+                    if hi <= ps or lo >= pe:
+                        nxt.append((ps, pe))
+                        continue
+                    if lo > ps:
+                        nxt.append((ps, lo))
+                    if hi < pe:
+                        nxt.append((hi, pe))
+                pieces = nxt
+        if len(pieces) == 1:
+            out.extend(pieces)  # coupe seulement rognée aux bords : conservée telle quelle
+        else:
+            out.extend(p for p in pieces if p[1] - p[0] >= settings.min_silence_s)
     return out
 
 
@@ -81,7 +109,10 @@ def analyze_keep_spans(
 
     energy = _frame_energy_db(pcm)
     count = len(energy)
-    threshold = float(np.percentile(energy, settings.energy_percentile)) + settings.energy_margin_db
+    threshold = min(
+        float(np.percentile(energy, settings.energy_percentile)) + settings.energy_margin_db,
+        SILENCE_FLOOR_DBFS,
+    )
     voice = _voice_frames(source, count)
     active = [v or e > threshold for v, e in zip(voice, energy, strict=True)]
 
@@ -102,7 +133,7 @@ def analyze_keep_spans(
                 cuts.append((cut_s, cut_e))
         i = j
 
-    cuts = _protect_words(cuts, _words(source, transcript))
+    cuts = _protect_words(cuts, _words(source, transcript), settings)
 
     keep: list[tuple[float, float]] = []
     pos = 0.0
@@ -112,4 +143,7 @@ def analyze_keep_spans(
         pos = max(pos, e)
     if duration > pos:
         keep.append((pos, duration))
+    if not keep:
+        log.info("Autocut : tout le clip serait coupé, conservation intégrale de %s.", source)
+        return [(0.0, duration)]
     return keep
