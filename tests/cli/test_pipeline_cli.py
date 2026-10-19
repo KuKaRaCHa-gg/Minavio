@@ -23,6 +23,9 @@ class Fakes:
         self.highlights = [
             Highlight(source=src, start=1, end=5, score=0.5, label="kill", detector="t")
         ]
+        self.keep_spans = [(1.0, 4.0)]  # plages renvoyées par analyze_keep_spans
+        self.autocut_inputs: list[tuple[Path, object, list | None]] = []
+        self.plan_kwargs: dict = {}
 
     def _rec(self, name):
         self.calls.append(name)
@@ -63,8 +66,14 @@ class Fakes:
             }
             return SimpleNamespace(model_dump=lambda mode=None: data)
 
-        def plan(h, profile, beats=None, music=None, transcript=None):
+        def autocut(source, settings, transcript=None):
+            self._rec("autocut")
+            self.autocut_inputs.append((source, settings, transcript))
+            return list(self.keep_spans)
+
+        def plan(h, profile, beats=None, music=None, transcript=None, keep_spans=None):
             self._rec("plan")
+            self.plan_kwargs = {"keep_spans": keep_spans, "highlights": h}
             return Timeline(
                 profile_id=profile.id,
                 fps=60,
@@ -89,6 +98,7 @@ class Fakes:
             "collect_sources": collect,
             "run_detectors": detect,
             "transcribe": transcribe,
+            "analyze_keep_spans": autocut,
             "detect_beats": beats,
             "rank_highlights": rank,
             "generate_copy": copy,
@@ -116,15 +126,31 @@ def job(env, **kw):
     )
 
 
+def job_without_autocut(env, monkeypatch, **kw):
+    """Charge le profil minivitch avec autocut désactivé (le profil livré l'active)."""
+    from minavio import config as config_mod
+
+    real_load = config_mod.load_profile
+
+    def load(profile_id, *a, **k):
+        p = real_load(profile_id, *a, **k)
+        p.editing.autocut = p.editing.autocut.model_copy(update={"enabled": False})
+        return p
+
+    monkeypatch.setattr(config_mod, "load_profile", load)
+    return job(env, **kw)
+
+
 def test_step_order_and_json(env):
     fakes, _ = env
     res = job(env)
-    assert fakes.calls[:7] == [
+    assert fakes.calls[:8] == [
         "collect",
         "detect",
         "transcribe",
         "rank",
         "copy",
+        "autocut",
         "plan",
         "captions",
     ]
@@ -135,6 +161,7 @@ def test_step_order_and_json(env):
         "rank",
         "copy",
         "music",
+        "autocut",
         "timeline",
         "overlays",
     ):
@@ -278,3 +305,64 @@ def test_cli_llm_ping(monkeypatch, ok, code):
     mod.LocalLLM = SimpleNamespace(from_settings=lambda s: SimpleNamespace(ping=lambda: ok))
     monkeypatch.setitem(sys.modules, "minavio.llm.client", mod)
     assert runner.invoke(app, ["llm", "ping", "minivitch"]).exit_code == code
+
+
+def test_autocut_skipped_when_disabled(env, monkeypatch):
+    fakes, _ = env
+    res = job_without_autocut(env, monkeypatch)
+    assert "autocut" not in fakes.calls
+    assert not (res.work_dir / "autocut.json").exists()
+    assert fakes.plan_kwargs["keep_spans"] is None
+
+
+def test_autocut_runs_when_enabled_and_writes_json(env):
+    fakes, _ = env
+    res = job(env)
+    assert fakes.calls.index("transcribe") < fakes.calls.index("autocut")
+    assert fakes.calls.index("autocut") < fakes.calls.index("plan")
+    data = json.loads((res.work_dir / "autocut.json").read_text(encoding="utf-8"))
+    assert data == {str(fakes.src): [[1.0, 4.0]]}
+
+
+def test_autocut_gets_source_transcript_and_settings(env):
+    fakes, _ = env
+    job(env)
+    assert len(fakes.autocut_inputs) == 1
+    source, settings, transcript = fakes.autocut_inputs[0]
+    assert source == fakes.src
+    assert settings.enabled is True
+    assert transcript and transcript[0].source == fakes.src
+
+
+def test_autocut_without_transcript_passes_none(env):
+    fakes, _ = env
+    fakes.fail = {"transcribe"}
+    job(env)
+    assert fakes.autocut_inputs[0][2] is None
+
+
+def test_keep_spans_passed_to_plan_timeline(env):
+    fakes, _ = env
+    job(env)
+    assert fakes.plan_kwargs["keep_spans"] == {fakes.src: [(1.0, 4.0)]}
+
+
+def test_autocut_failure_is_warning_and_continues(env):
+    fakes, _ = env
+    fakes.fail = {"autocut"}
+    res = job(env)
+    assert any("autocut" in w for w in res.warnings)
+    assert fakes.plan_kwargs["keep_spans"] is None
+    assert len(res.outputs) == 2
+    assert not (res.work_dir / "autocut.json").exists()
+
+
+def test_autocut_resume_reads_json(env):
+    fakes, _ = env
+    res = job(env)
+    (res.work_dir / "timeline.json").unlink()  # forcer le recalcul du montage seul
+    fakes.calls.clear()
+    job(env, resume=True)
+    assert "autocut" not in fakes.calls
+    assert "plan" in fakes.calls
+    assert fakes.plan_kwargs["keep_spans"] == {fakes.src: [(1.0, 4.0)]}

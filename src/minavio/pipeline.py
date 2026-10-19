@@ -1,9 +1,14 @@
 """Orchestration du pipeline `minavio run`.
 
-Étapes : collect → detect → transcribe → rank → copy → music → beats → timeline → overlays → render.
-Chaque étape écrit `work/<job_id>/<étape>.json` ; avec `resume=True` une étape dont le JSON existe
-est relue au lieu d'être recalculée (`collect` est toujours rejouée : elle sert à calculer le
-`job_id`). Les modules des autres étapes sont importés paresseusement via `_api`.
+Étapes : collect → detect → transcribe → rank → copy → music → beats → autocut → timeline →
+overlays → render. `autocut` n'existe que si `profile.editing.autocut.enabled` : elle tourne sur
+chaque source retenue (après `transcribe`, avant `timeline`) et ses plages conservées (`keep_spans`)
+sont passées à `plan_timeline`. En cas d'échec, un warning est émis et le montage se fait sans
+coupe de silences.
+
+Chaque étape écrit son JSON dans `work/<job_id>/<étape>.json` ; avec `resume=True` une étape dont
+le JSON existe est relue au lieu d'être recalculée (`collect` est toujours rejouée : elle sert à
+calculer le `job_id`). Les modules des autres étapes sont importés paresseusement via `_api`.
 
 Transcript : `transcribe.json` stocke `{chemin_source: [segments]}` et chaque segment porte son
 `source`, ce qui permet à `plan_timeline` de rattacher les captions au bon clip en multi-sources.
@@ -40,6 +45,7 @@ _API = {
     "collect_sources": "minavio.core.ffmpeg:collect_sources",
     "run_detectors": "minavio.core.detect:run_detectors",
     "transcribe": "minavio.core.asr:transcribe",
+    "analyze_keep_spans": "minavio.core.autocut:analyze_keep_spans",
     "detect_beats": "minavio.core.audio.beats:detect_beats",
     "rank_highlights": "minavio.llm.rank:rank_highlights",
     "generate_copy": "minavio.llm.copywriting:generate_copy",
@@ -323,6 +329,22 @@ def run_job(
 
     used = {h.source for h in highlights}
     plan_transcript = [seg for s, segs in by_source.items() if s in used for seg in segs]
+    keep_spans: dict[Path, list[tuple[float, float]]] | None = None
+    if profile.editing.autocut.enabled:
+        autocut_settings = profile.editing.autocut
+        analysed: dict[Path, list[tuple[float, float]]] | None = steps.run(
+            "autocut",
+            lambda: {
+                s: _api("analyze_keep_spans")(s, autocut_settings, by_source.get(s) or None)
+                for s in sorted(used, key=str)
+            },
+            dump=lambda d: {str(k): [[a, b] for a, b in v] for k, v in d.items()},
+            load=lambda d: {Path(k): [(float(a), float(b)) for a, b in v] for k, v in d.items()},
+            optional=True,
+            default=None,
+        )
+        if analysed is not None:
+            keep_spans = {s: v for s, v in analysed.items() if s in used}
     timeline: Timeline = steps.run(
         "timeline",
         lambda: _api("plan_timeline")(
@@ -331,6 +353,7 @@ def run_job(
             beats=beats or None,
             music=music_path,
             transcript=plan_transcript or None,
+            keep_spans=keep_spans,
         ),
         dump=lambda t: t.model_dump(mode="json"),
         load=Timeline.model_validate,

@@ -8,20 +8,26 @@
 #   llm        prompt (fichier de src/minavio/llm/prompts/), max_highlights ;
 #              base_url/model surchargés par MINAVIO_LLM_BASE_URL / MINAVIO_LLM_MODEL.
 #   motion     theme (couleurs, fonte), templates Remotion, style des sous-titres mot-à-mot.
-#   editing    pacing, durée cible, bornes de clip, pre/post-roll autour de chaque moment.
+#   editing    pacing, durée cible, bornes de clip, pre/post-roll autour de chaque moment ;
+#              editing.autocut coupe les silences (et recale la coupe sur le rythme de parole).
+#   framing    smoothing : lissage du suivi de cadrage (reframe face_track / action_track) ;
+#              facecam : détection et découpe de la facecam pour reframe split_facecam.
+#   Référence des blocs et détecteurs : configs/README.md.
 id: thelostchat
 display_name: The Lost Chat
 content_type: stream_bestof
 description: Best-of et moments forts de streamers et créateurs, formats courts viraux.
 
 outputs:
-  - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 30, reframe: face_track, max_duration_s: 59 }
+  - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 30, reframe: split_facecam, max_duration_s: 59 }
   - { name: youtube, aspect: "16:9", width: 1920, height: 1080, fps: 30, reframe: none }
 
 detection:
   - { name: audio_peak, weight: 1.0, params: { min_db_above_median: 10 } }   # rires, cris
   - { name: speech, weight: 0.8 }
   - { name: scene_change, weight: 0.3 }
+  - { name: hype, weight: 1.0 }                  # pics d'intensité vocale/audio combinés
+  - { name: chat_spike, weight: 0.8 }            # bonus : ignoré si pas de log de chat
 
 audio:
   music_dir: assets/music/thelostchat
@@ -45,3 +51,7 @@ editing:
   max_clip_s: 10
   pre_roll_s: 1.5
   post_roll_s: 1.0
+  autocut: { enabled: true, min_silence_s: 0.35, punch_in: 1.06 }  # coupe agressive
+
+framing:
+  facecam: { corner: auto, split_ratio: 0.35, fallback: face_track }  # split_facecam

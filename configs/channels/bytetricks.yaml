@@ -8,7 +8,11 @@
 #   llm        prompt (fichier de src/minavio/llm/prompts/), max_highlights ;
 #              base_url/model surchargés par MINAVIO_LLM_BASE_URL / MINAVIO_LLM_MODEL.
 #   motion     theme (couleurs, fonte), templates Remotion, style des sous-titres mot-à-mot.
-#   editing    pacing, durée cible, bornes de clip, pre/post-roll autour de chaque moment.
+#   editing    pacing, durée cible, bornes de clip, pre/post-roll autour de chaque moment ;
+#              editing.autocut coupe les silences (et recale la coupe sur le rythme de parole).
+#   framing    smoothing : lissage du suivi de cadrage (reframe face_track / action_track) ;
+#              facecam : détection et découpe de la facecam pour reframe split_facecam.
+#   Référence des blocs et détecteurs : configs/README.md.
 id: bytetricks
 display_name: Byte Tricks
 content_type: tech_facts
@@ -21,6 +25,7 @@ outputs:
 detection:
   - { name: speech, weight: 1.0 }                # le fil narratif vient de la voix
   - { name: scene_change, weight: 0.5, params: { threshold: 0.35 } }
+  - { name: hype, weight: 0.5 }                  # pics d'intensité vocale/audio combinés
 
 audio:
   music_dir: assets/music/bytetricks
@@ -44,3 +49,4 @@ editing:
   max_clip_s: 12
   pre_roll_s: 0.3
   post_roll_s: 0.3
+  autocut: { enabled: true, min_silence_s: 0.5, punch_in: 1.08 }  # coupe les silences
