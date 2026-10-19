@@ -129,3 +129,80 @@ def test_captions_offset_across_clips(profile):
 
 def test_empty_highlights(profile):
     assert plan_timeline([], profile).clips == []
+
+
+# --- autocut (keep_spans) ---------------------------------------------------------------------
+
+
+def _ac(profile, punch_in=1.0, **editing):
+    p = prof(profile, pre_roll_s=0, post_roll_s=0, min_clip_s=1, max_clip_s=60, **editing)
+    ac = p.editing.autocut.model_copy(update={"enabled": True, "punch_in": punch_in})
+    return p.model_copy(update={"editing": p.editing.model_copy(update={"autocut": ac})})
+
+
+def test_keep_spans_split_window_and_zoom(profile):
+    p = _ac(profile, punch_in=1.1, target_duration_s=100)
+    ks = {SRC: [(0, 12), (14, 17), (18, 30)]}
+    tl = plan_timeline([hl(10, 20)], p, keep_spans=ks)
+    assert [(c.start, c.end) for c in tl.clips] == [(10, 12), (14, 17), (18, 20)]
+    assert [c.zoom for c in tl.clips] == [1.0, 1.1, 1.0]
+    assert all(c.highlight_label == "kill" for c in tl.clips)
+
+
+def test_no_zoom_without_punch_in(profile):
+    p = _ac(profile, target_duration_s=100)
+    tl = plan_timeline([hl(10, 20)], p, keep_spans={SRC: [(0, 12), (14, 30)]})
+    assert len(tl.clips) == 2 and {c.zoom for c in tl.clips} == {1.0}
+
+
+def test_short_fragments_dropped_and_window_removed(profile):
+    p = _ac(profile, target_duration_s=100)
+    tl = plan_timeline([hl(10, 20)], p, keep_spans={SRC: [(10, 10.1), (12, 16)]})
+    assert [(c.start, c.end) for c in tl.clips] == [(12, 16)]
+    # fenêtre entièrement dans un creux : retirée
+    tl = plan_timeline([hl(10, 20), hl(40, 50)], p, keep_spans={SRC: [(40, 50)]})
+    assert [c.start for c in tl.clips] == [40]
+
+
+def test_other_source_untouched(profile):
+    p = _ac(profile, target_duration_s=100)
+    tl = plan_timeline([hl(10, 20)], p, keep_spans={Path("b.mp4"): [(0, 1)]})
+    assert [(c.start, c.end) for c in tl.clips] == [(10, 20)]
+
+
+def test_target_duration_uses_effective_duration(profile):
+    # 3 fenêtres de 10 s, cible 12 s : sans autocut une seule tient ; avec, 4 s gardées chacune
+    p = _ac(profile, target_duration_s=12)
+    hs = [hl(0, 10, 0.9, "a"), hl(20, 30, 0.8, "b"), hl(40, 50, 0.7, "c")]
+    assert len(plan_timeline(hs, p).clips) == 1
+    ks = {SRC: [(0, 4), (20, 24), (40, 44)]}
+    tl = plan_timeline(hs, p, keep_spans=ks)
+    assert [c.highlight_label for c in tl.clips] == ["a", "b", "c"]
+    assert tl.duration <= 12
+
+
+def test_internal_cuts_not_snapped(profile):
+    p = _ac(profile, target_duration_s=100, pacing="dynamic")
+    p = p.model_copy(update={"audio": p.audio.model_copy(update={"beat_sync": True})})
+    beats = [i * 0.5 for i in range(80)]
+    ks = {SRC: [(10, 12.13), (14, 30)]}
+    tl = plan_timeline([hl(10, 16.0)], p, beats=beats, keep_spans=ks)
+    assert tl.clips[0].end == pytest.approx(12.13)  # coupe interne intacte
+    # bord externe aligné sur un beat (multiple de 0.5)
+    assert min(abs(tl.duration - b) for b in beats) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_captions_follow_autocut(profile):
+    p = _ac(profile, target_duration_s=100)
+    words = [
+        Word(start=10.0, end=10.5, text="un"),
+        Word(start=11.0, end=11.5, text="deux"),
+        Word(start=12.5, end=13.0, text="creux"),  # dans le creux : disparaît
+        Word(start=14.0, end=14.5, text="trois"),
+    ]
+    seg = TranscriptSegment(start=10.0, end=14.5, text="un deux creux trois", words=words)
+    ks = {SRC: [(0, 11.8), (13.9, 30)]}
+    tl = plan_timeline([hl(10, 15)], p, transcript=[seg], keep_spans=ks)
+    assert [(c.start, c.end) for c in tl.clips] == [(10, 11.8), (13.9, 15)]
+    assert [w.text for cap in tl.captions for w in cap.words] == ["un", "deux", "trois"]
+    assert tl.captions[-1].words[0].start == pytest.approx(1.8 + 0.1)  # décalé du 1er clip
