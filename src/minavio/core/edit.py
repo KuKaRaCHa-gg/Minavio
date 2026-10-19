@@ -1,0 +1,163 @@
+"""Planification de la timeline : fonction pure (pas de média, pas d'I/O)."""
+
+from __future__ import annotations
+
+import bisect
+import logging
+from pathlib import Path
+
+from minavio.config.schema import ChannelProfile
+from minavio.core.models import Clip, Highlight, Timeline, TranscriptSegment, Word
+
+log = logging.getLogger("minavio.edit")
+
+# Tolérance (s) pour aligner une coupe sur le beat le plus proche, selon le pacing.
+BEAT_TOLERANCE_S = {"calm": 0.25, "dynamic": 0.2, "hyper": 0.15}
+_MIN_CAPTION_S = 0.05
+
+
+class _Window:
+    def __init__(self, source: Path, start: float, end: float, score: float, label: str):
+        self.source, self.start, self.end, self.score, self.label = source, start, end, score, label
+
+    @property
+    def duration(self) -> float:
+        return self.end - self.start
+
+
+def _fit(w: _Window, lo: float, hi: float, center: float) -> None:
+    """Borne la durée de w entre lo et hi (recentré sur `center` si trop long)."""
+    if w.duration > hi:
+        w.start = max(0.0, center - hi / 2)
+        w.end = w.start + hi
+    elif w.duration < lo:
+        w.end = w.start + lo
+
+
+def _windows(highlights: list[Highlight], profile: ChannelProfile) -> list[_Window]:
+    ed = profile.editing
+    raw = [
+        _Window(
+            h.source,
+            max(0.0, h.start - ed.pre_roll_s),
+            h.end + ed.post_roll_s,
+            h.score,
+            h.label,
+        )
+        for h in highlights
+    ]
+    merged: list[_Window] = []
+    for w in sorted(raw, key=lambda x: (str(x.source), x.start)):
+        last = merged[-1] if merged else None
+        if last and last.source == w.source and w.start < last.end:
+            if w.score > last.score:
+                last.label = w.label
+            last.end = max(last.end, w.end)
+            last.score = max(last.score, w.score)
+        else:
+            merged.append(w)
+    for w in merged:
+        _fit(w, ed.min_clip_s, ed.max_clip_s, (w.start + w.end) / 2)
+    return merged
+
+
+def _select(windows: list[_Window], target: float) -> list[_Window]:
+    chosen: list[_Window] = []
+    total = 0.0
+    for w in sorted(windows, key=lambda x: -x.score):
+        if total + w.duration <= target:
+            chosen.append(w)
+            total += w.duration
+        elif not chosen:  # au moins un clip, tronqué à la durée cible
+            w.end = w.start + target
+            chosen.append(w)
+            break
+    return sorted(chosen, key=lambda x: (str(x.source), x.start))
+
+
+def _snap(windows: list[_Window], beats: list[float], profile: ChannelProfile) -> None:
+    """Aligne chaque coupe de fin sur le beat le plus proche (dans la tolérance du pacing)."""
+    ed = profile.editing
+    tol = BEAT_TOLERANCE_S[ed.pacing]
+    sorted_beats = sorted(beats)
+    t = 0.0
+    for w in windows:
+        cut = t + w.duration
+        i = bisect.bisect_left(sorted_beats, cut)
+        cands = sorted_beats[max(0, i - 1) : i + 1]
+        if cands:
+            beat = min(cands, key=lambda b: abs(b - cut))
+            new_dur = w.duration + (beat - cut)
+            if abs(beat - cut) <= tol and ed.min_clip_s <= new_dur <= ed.max_clip_s:
+                w.end = w.start + new_dur
+        t += w.duration
+
+
+def _remap_captions(
+    clips: list[Clip], transcript: list[TranscriptSegment]
+) -> list[TranscriptSegment]:
+    out: list[TranscriptSegment] = []
+    offset = 0.0
+    for clip in clips:
+        for seg in transcript:
+            if seg.end <= clip.start or seg.start >= clip.end:
+                continue
+
+            def to_tl(t: float, clip: Clip = clip, offset: float = offset) -> float:
+                return offset + (min(max(t, clip.start), clip.end) - clip.start) / clip.speed
+
+            words: list[Word] = []
+            for w in seg.words:
+                if w.end <= clip.start or w.start >= clip.end:
+                    continue
+                s, e = to_tl(w.start), to_tl(w.end)
+                if e - s > 0:
+                    words.append(w.model_copy(update={"start": s, "end": e}))
+            start, end = to_tl(seg.start), to_tl(seg.end)
+            if seg.words:
+                if not words:
+                    continue
+                start, end = words[0].start, words[-1].end
+                text = " ".join(w.text for w in words)
+            else:
+                text = seg.text
+            if end - start >= _MIN_CAPTION_S:
+                out.append(
+                    seg.model_copy(
+                        update={"start": start, "end": end, "text": text, "words": words}
+                    )
+                )
+        offset += clip.duration / clip.speed
+    return out
+
+
+def plan_timeline(
+    highlights: list[Highlight],
+    profile: ChannelProfile,
+    beats: list[float] | None = None,
+    music: Path | None = None,
+    transcript: list[TranscriptSegment] | None = None,
+) -> Timeline:
+    """Highlights -> Timeline (pre/post roll, bornes, durée cible, snap beats, captions)."""
+    windows = _select(_windows(highlights, profile), profile.editing.target_duration_s)
+    if beats and profile.audio.beat_sync:
+        _snap(windows, beats, profile)
+
+    clips = [
+        Clip(source=w.source, start=w.start, end=w.end, highlight_label=w.label) for w in windows
+    ]
+    timeline = Timeline(
+        profile_id=profile.id,
+        fps=profile.outputs[0].fps,
+        clips=clips,
+        music=music,
+        beats=[b for b in sorted(beats or []) if 0 <= b <= sum(c.duration for c in clips)],
+    )
+    if transcript:
+        if len({c.source for c in clips}) > 1:
+            log.warning(
+                "Transcript sans champ 'source' et plusieurs sources : captions appliquées "
+                "à tous les clips par temps source (risque d'incohérence)."
+            )
+        timeline.captions = _remap_captions(clips, transcript)
+    return timeline
