@@ -155,13 +155,39 @@ def test_no_zoom_without_punch_in(profile):
     assert len(tl.clips) == 2 and {c.zoom for c in tl.clips} == {1.0}
 
 
-def test_short_fragments_dropped_and_window_removed(profile):
+def test_short_fragments_merged_and_window_removed(profile):
     p = _ac(profile, target_duration_s=100)
+    # fragment trop court : fusionné au voisin (trou comblé), pas supprimé
     tl = plan_timeline([hl(10, 20)], p, keep_spans={SRC: [(10, 10.1), (12, 16)]})
-    assert [(c.start, c.end) for c in tl.clips] == [(12, 16)]
+    assert [(c.start, c.end) for c in tl.clips] == [(10, 16)]
     # fenêtre entièrement dans un creux : retirée
     tl = plan_timeline([hl(10, 20), hl(40, 50)], p, keep_spans={SRC: [(40, 50)]})
     assert [c.start for c in tl.clips] == [40]
+
+
+def test_isolated_short_fragment_kept(profile):
+    p = _ac(profile, target_duration_s=100)
+    tl = plan_timeline([hl(10, 20)], p, keep_spans={SRC: [(14, 14.15)]})  # « Non ! » isolé
+    assert [(c.start, c.end) for c in tl.clips] == [(14, 14.15)]
+    tl = plan_timeline([hl(10, 20)], p, keep_spans={SRC: [(14, 14.05)]})  # < 0,1 s : ignoré
+    assert tl.clips == []
+
+
+def test_short_fragment_merges_with_nearest_neighbour(profile):
+    p = _ac(profile, target_duration_s=100)
+    ks = {SRC: [(10, 13), (13.5, 13.6), (19, 20)]}
+    tl = plan_timeline([hl(10, 20)], p, keep_spans=ks)
+    assert [(c.start, c.end) for c in tl.clips] == [(10, 13.6), (19, 20)]
+
+
+def test_wordless_segment_emitted_once(profile):
+    p = _ac(profile, target_duration_s=100)
+    seg = TranscriptSegment(start=11.0, end=17.0, text="phrase longue")
+    ks = {SRC: [(0, 12), (14, 30)]}  # clips (10,12) et (14,20) ; recouvrement 1 s vs 3 s
+    tl = plan_timeline([hl(10, 20)], p, transcript=[seg], keep_spans=ks)
+    assert [c.text for c in tl.captions] == ["phrase longue"]
+    cap = tl.captions[0]
+    assert cap.start == pytest.approx(2.0) and cap.end == pytest.approx(5.0)  # clampé au clip 2
 
 
 def test_other_source_untouched(profile):

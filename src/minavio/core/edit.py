@@ -14,7 +14,7 @@ log = logging.getLogger("minavio.edit")
 # Tolérance (s) pour aligner une coupe sur le beat le plus proche, selon le pacing.
 BEAT_TOLERANCE_S = {"calm": 0.25, "dynamic": 0.2, "hyper": 0.15}
 _MIN_CAPTION_S = 0.05
-MIN_FRAGMENT_S = 0.25  # sous-clips plus courts que ça (après autocut) : ignorés
+MIN_FRAGMENT_S = 0.25  # sous-clips plus courts que ça (après autocut) : fusionnés au voisin
 
 KeepSpans = dict[Path, list[tuple[float, float]]]
 
@@ -64,17 +64,35 @@ def _windows(highlights: list[Highlight], profile: ChannelProfile) -> list[_Wind
     return merged
 
 
+MIN_SOLO_FRAGMENT_S = 0.1  # un fragment seul dans sa fenêtre est gardé au-dessus de ce seuil
+
+
 def _fragments(w: _Window, keep_spans: KeepSpans | None) -> list[tuple[float, float]]:
-    """Sous-intervalles de la fenêtre à garder (fragments < MIN_FRAGMENT_S ignorés)."""
+    """Sous-intervalles de la fenêtre à garder.
+
+    Un fragment < MIN_FRAGMENT_S est fusionné avec son voisin le plus proche (le trou est comblé) ;
+    seul dans sa fenêtre il est gardé, sauf s'il fait < MIN_SOLO_FRAGMENT_S.
+    """
     spans = keep_spans.get(w.source) if keep_spans else None
     if spans is None:
         return [(w.start, w.end)]
-    out = []
+    frags = []
     for s, e in sorted(spans):
         s, e = max(s, w.start), min(e, w.end)
-        if e - s >= MIN_FRAGMENT_S:
-            out.append((s, e))
-    return out
+        if e - s > 1e-9:
+            frags.append((s, e))
+    while len(frags) > 1:
+        i = next((k for k, (s, e) in enumerate(frags) if e - s < MIN_FRAGMENT_S), None)
+        if i is None:
+            break
+        left = frags[i][0] - frags[i - 1][1] if i > 0 else float("inf")
+        right = frags[i + 1][0] - frags[i][1] if i + 1 < len(frags) else float("inf")
+        j = i - 1 if left <= right else i + 1
+        lo, hi = min(i, j), max(i, j)
+        frags[lo : hi + 1] = [(frags[lo][0], frags[hi][1])]
+    if len(frags) == 1 and frags[0][1] - frags[0][0] < MIN_SOLO_FRAGMENT_S - 1e-9:
+        return []
+    return frags
 
 
 def _effective(w: _Window, keep_spans: KeepSpans | None) -> float:
@@ -133,11 +151,25 @@ def _remap_captions(
 ) -> list[TranscriptSegment]:
     out: list[TranscriptSegment] = []
     offset = 0.0
-    for clip in clips:
-        for seg in transcript:
+    # segment sans mots : émis uniquement sur le clip de plus grand recouvrement
+    best: dict[int, int] = {}
+    for si, seg in enumerate(transcript):
+        if seg.words:
+            continue
+        top = 0.0
+        for ci, clip in enumerate(clips):
+            if seg.source is not None and seg.source != clip.source:
+                continue
+            ov = min(seg.end, clip.end) - max(seg.start, clip.start)
+            if ov > top + 1e-9:
+                top, best[si] = ov, ci
+    for ci, clip in enumerate(clips):
+        for si, seg in enumerate(transcript):
             if seg.end <= clip.start or seg.start >= clip.end:
                 continue
             if seg.source is not None and seg.source != clip.source:
+                continue
+            if not seg.words and best.get(si) != ci:
                 continue
 
             def to_tl(t: float, clip: Clip = clip, offset: float = offset) -> float:
