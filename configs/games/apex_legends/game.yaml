@@ -1,0 +1,22 @@
+# Nouveau jeu = copier ce dossier, changer les templates. Aucun code à écrire.
+id: apex_legends
+name: Apex Legends
+combo_window_s: 6.0
+ui_templates:
+  - name: kill_marker
+    image: templates/kill_marker.png   # crop du marqueur de kill (à fournir)
+    label: kill
+    roi: [0.40, 0.35, 0.20, 0.30]
+    threshold: 0.82
+    cooldown_s: 0.8
+  - name: knockdown_banner
+    image: templates/knockdown.png
+    label: knock
+    roi: [0.30, 0.15, 0.40, 0.15]
+    threshold: 0.80
+  - name: champion_banner
+    image: templates/champion.png
+    label: win
+    roi: [0.20, 0.30, 0.60, 0.40]
+    threshold: 0.75
+    cooldown_s: 30

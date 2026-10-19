@@ -1,0 +1,35 @@
+id: bytetricks
+display_name: Byte Tricks
+content_type: tech_facts
+description: Fun facts tech, anecdotes d'ingénierie et de software.
+
+outputs:
+  - { name: youtube, aspect: "16:9", width: 1920, height: 1080, fps: 30, reframe: none }
+  - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 30, reframe: blur_pad, max_duration_s: 59 }
+
+detection:
+  - { name: speech, weight: 1.0 }                # le fil narratif vient de la voix
+  - { name: scene_change, weight: 0.5, params: { threshold: 0.35 } }
+
+audio:
+  music_dir: assets/music/bytetricks
+  beat_sync: true
+  loudness_lufs: -14
+  ducking: { enabled: true, music_gain_db: -20 }
+
+llm:
+  prompt: tech_facts
+  max_highlights: 6
+
+motion:
+  theme: { primary: "#0A84FF", accent: "#30D158", font: "JetBrains Mono" }
+  templates: [title, popup, progress_bar, captions]
+  captions: { enabled: true, word_by_word: true, position: bottom }
+
+editing:
+  pacing: dynamic
+  target_duration_s: 300
+  min_clip_s: 1.5
+  max_clip_s: 12
+  pre_roll_s: 0.3
+  post_roll_s: 0.3

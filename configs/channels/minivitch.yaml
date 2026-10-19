@@ -1,0 +1,37 @@
+id: minivitch
+display_name: Minivitch
+content_type: gaming
+description: Moments chaotiques et clutchs sur jeux vidéo.
+games: [apex_legends]
+
+outputs:
+  - { name: youtube, aspect: "16:9", width: 1920, height: 1080, fps: 60, reframe: none }
+  - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 60, reframe: action_track, max_duration_s: 59 }
+
+detection:
+  - { name: template_match, weight: 1.0 }        # kills / knocks / win depuis games/*
+  - { name: audio_peak, weight: 0.6, params: { min_db_above_median: 12 } }
+  - { name: speech, weight: 0.4 }                # réactions vocales (cris, rires)
+
+audio:
+  music_dir: assets/music/minivitch
+  beat_sync: true
+  loudness_lufs: -14
+  ducking: { enabled: true, music_gain_db: -16 }
+
+llm:
+  prompt: gaming
+  max_highlights: 12
+
+motion:
+  theme: { primary: "#FF3B30", accent: "#FFD60A", font: "Bebas Neue" }
+  templates: [title, popup, reaction, captions]
+  captions: { enabled: true, word_by_word: true, position: bottom }
+
+editing:
+  pacing: hyper
+  target_duration_s: 480
+  min_clip_s: 2
+  max_clip_s: 20
+  pre_roll_s: 3.0     # contexte avant le clutch
+  post_roll_s: 1.5

@@ -1,0 +1,36 @@
+id: thelostchat
+display_name: The Lost Chat
+content_type: stream_bestof
+description: Best-of et moments forts de streamers et créateurs, formats courts viraux.
+
+outputs:
+  - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 30, reframe: face_track, max_duration_s: 59 }
+  - { name: youtube, aspect: "16:9", width: 1920, height: 1080, fps: 30, reframe: none }
+
+detection:
+  - { name: audio_peak, weight: 1.0, params: { min_db_above_median: 10 } }   # rires, cris
+  - { name: speech, weight: 0.8 }
+  - { name: scene_change, weight: 0.3 }
+
+audio:
+  music_dir: assets/music/thelostchat
+  beat_sync: true
+  loudness_lufs: -14
+  ducking: { enabled: true, music_gain_db: -18 }
+
+llm:
+  prompt: stream_bestof
+  max_highlights: 15
+
+motion:
+  theme: { primary: "#BF5AF2", accent: "#FF9F0A", font: "Montserrat ExtraBold" }
+  templates: [title, reaction, captions]
+  captions: { enabled: true, word_by_word: true, position: center }
+
+editing:
+  pacing: hyper
+  target_duration_s: 45
+  min_clip_s: 1
+  max_clip_s: 10
+  pre_roll_s: 1.5
+  post_roll_s: 1.0
