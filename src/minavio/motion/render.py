@@ -18,8 +18,18 @@ from minavio.errors import FFmpegError, MotionUnavailableError
 
 log = logging.getLogger(__name__)
 
-TEMPLATES = ("captions", "title", "popup", "progress_bar", "reaction")
-FALLBACK_TEMPLATES = ("title", "captions")
+TEMPLATES = (
+    "captions",
+    "title",
+    "popup",
+    "progress_bar",
+    "reaction",
+    "kill_counter",
+    "rewind",
+    "rank_card",
+)
+FALLBACK_TEMPLATES = ("title", "captions", "kill_counter", "rank_card")
+KILL_LABELS = ("KILL", "DOUBLE KILL", "TRIPLE KILL", "SQUAD WIPED", "SQUAD WIPED")
 DEFAULT_THEME = {"primary": "#FF3B30", "accent": "#FFD60A"}
 _RENDER_TIMEOUT_S = 600
 
@@ -166,14 +176,40 @@ def _drawtext(
     return "drawtext=" + ":".join(parts)
 
 
+def kill_label(props: dict[str, Any]) -> str:
+    """Libellé du compteur de kills (même logique que `KillCounter.tsx`)."""
+    label = str(props.get("label") or "").strip()
+    if label:
+        return label.upper()
+    kills = min(5, max(1, int(props.get("kills", 1))))
+    return KILL_LABELS[kills - 1]
+
+
 def _render_ffmpeg_fallback(
     overlay: Overlay, props: dict[str, Any], fmt: OutputFormat, out: Path
 ) -> None:
     font = find_arcade_font()
     theme = props["theme"]
-    position = str(props.get("position", "center" if overlay.template == "title" else "bottom"))
+    default_pos = {"title": "center", "kill_counter": "top", "rank_card": "top"}
+    position = str(props.get("position", default_pos.get(overlay.template, "bottom")))
     filters: list[str] = []
-    if overlay.template == "title":
+    if overlay.template in ("kill_counter", "rank_card"):
+        text = (
+            kill_label(props) if overlay.template == "kill_counter" else f"#{props.get('rank', 1)}"
+        )
+        tf = out.with_suffix(".txt")
+        tf.write_text(text, encoding="utf-8")
+        filters.append(
+            _drawtext(
+                tf,
+                fmt=fmt,
+                position=position,
+                color=theme["accent"],
+                shadow=theme["primary"],
+                font=font,
+            )
+        )
+    elif overlay.template == "title":
         text = str(props.get("text", "PRESS START")).upper()
         tf = out.with_suffix(".txt")
         tf.write_text(text, encoding="utf-8")
@@ -250,9 +286,9 @@ def render_overlays(
     """Rend chaque `timeline.overlays[i]` en `.mov` ProRes 4444 alpha ; renvoie {i: chemin}.
 
     Cache : le nom du fichier dépend du hash des props (un rendu existant est réutilisé).
-    Sans `npx`/`node_modules` (ou si Remotion échoue) : repli FFmpeg `drawtext` pour `title` et
-    `captions` ; pour les autres templates, `MotionUnavailableError` si `strict`, sinon l'overlay
-    est ignoré avec un warning.
+    Sans `npx`/`node_modules` (ou si Remotion échoue) : repli FFmpeg `drawtext` pour `title`,
+    `captions`, `kill_counter` et `rank_card` ; pour les autres templates (dont `rewind`),
+    `MotionUnavailableError` si `strict`, sinon l'overlay est ignoré avec un warning.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     use_remotion = remotion_available()
