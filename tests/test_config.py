@@ -102,3 +102,15 @@ def test_invalid_roi_rejected(roi):
     with pytest.raises(ValidationError, match="roi"):
         UiTemplate(name="k", image="k.png", label="kill", roi=roi)
     assert KillfeedSettings(roi=(0.6, 0, 0.4, 0.3)).roi == (0.6, 0, 0.4, 0.3)
+
+
+def test_every_game_profile_loads():
+    # Un game.yaml invalide (YAML, schéma) ne doit pas passer inaperçu : chaque jeu est chargé.
+    from minavio.config import list_games, load_game
+
+    games = list_games()
+    assert "apex_legends" in games
+    for game_id in games:
+        g = load_game(game_id)
+        assert g.id == game_id
+        assert g.genre != "other" or game_id == "example", f"{game_id} : genre manquant"
