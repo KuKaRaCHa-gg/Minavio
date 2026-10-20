@@ -2,6 +2,30 @@
 id: apex_legends
 name: Apex Legends
 combo_window_s: 6.0
+# Lecture OCR du killfeed : aucune capture à fournir. roi: null = zone trouvée automatiquement
+# (la ROI trouvée est loguée en info : la recopier ici pour sauter l'auto-localisation).
+killfeed:
+  roi: null
+  player_names: []   # votre pseudo (sinon tous les kills sont comptés comme les vôtres)
+  keywords:
+    kill:
+      - eliminated
+      - éliminé
+      - killed
+      - a tué
+      - headshot
+    knock:
+      - knocked down
+      - a mis à terre
+      - mis à terre
+      - à terre
+      - downed
+    win:
+      - champion de l'arène
+      - champions of the arena
+      - champion
+      - victoire
+      - victory
 ui_templates:
   - name: kill_marker
     image: templates/kill_marker.png   # crop du marqueur de kill (à fournir)
