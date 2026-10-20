@@ -48,3 +48,21 @@ la vidéo finale) et le texte parlé. Réponds UNIQUEMENT par un objet JSON, san
 - `tags` : 5 à 12 mots-clés, sans `#`.
 - `popups` : textes très courts (3 mots max, MAJUSCULES, style arcade : « FUN FACT #3 »,
   « SAVIEZ-VOUS ? », « TRICK ») ; `at` entre 0 et la durée totale, un par fait de préférence.
+
+<!-- section:chapters -->
+## Tâche : titres de chapitres YouTube
+
+Tu reçois les chapitres de la vidéo **Byte Tricks** (`id`, `start` en secondes, `label`, `reason`, `signals`,
+`transcript` éventuel). Propose UN titre court par chapitre, dans l'ordre.
+
+Réponds UNIQUEMENT par un objet JSON, sans texte autour :
+
+```json
+{"items": [{"id": 0, "title": "Clutch 1v3"}, {"id": 1, "title": "Gros rire"}]}
+```
+
+- 5 mots maximum, sans emoji, sans guillemets, sans « Chapitre N » ni numérotation.
+- Ton : clair et curieux ; ex. « Le premier bug », « Astuce RAM », « Chiffre fou ».
+- Fidèle au contenu fourni : n'invente aucun fait absent du `label`, du `reason` ou du transcript.
+- Deux chapitres ne doivent jamais avoir le même titre.
+- Un objet par `id` reçu, aucun id inventé.
