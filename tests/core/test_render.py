@@ -1,3 +1,5 @@
+import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -6,6 +8,8 @@ from minavio.config.schema import OutputFormat
 from minavio.core import ffmpeg, reframe, render
 from minavio.core.models import Clip, Overlay, Timeline
 from minavio.errors import MinavioError
+from tests.core.helpers import ff
+from tests.core.test_interpolate import FAKE_RIFE
 
 
 def fmt(aspect="16:9", w=320, h=180, reframe_mode="none", **kw) -> OutputFormat:
@@ -185,3 +189,118 @@ def test_flash_and_beep_stay_in_sync(media_dir, profile, tmp_path):
     assert t_video == pytest.approx(1.0, abs=2 / 30)
     assert t_audio == pytest.approx(1.0, abs=0.06)
     assert abs(t_video - t_audio) < 0.06
+
+
+# --------------------------------------------------------------------------- ralenti + pistes audio
+
+
+def _unique_frames(path: Path) -> int:
+    """Nombre d'images distinctes (mpdecimate écarte les doublons)."""
+    err = ffmpeg.run_capture(
+        ["-i", str(path), "-vf", "mpdecimate,showinfo", "-f", "null", "-"], stream="stderr"
+    ).decode()
+    return sum(1 for ln in err.splitlines() if "Parsed_showinfo" in ln and " n:" in ln)
+
+
+def _slow_profile(profile, interpolation: str):
+    from minavio.config.schema import SlowmoSettings
+
+    p = profile.model_copy(deep=True)
+    p.editing.slowmo = SlowmoSettings(enabled=True, interpolation=interpolation)
+    return p
+
+
+def test_plain_command_has_no_slowmo_artifacts(testsrc_video, profile, tmp_path):
+    args = render.build_command(timeline(testsrc_video), fmt(), tmp_path / "o.mp4", profile)
+    graph = args[args.index("-filter_complex") + 1]
+    assert "minterpolate" not in graph and "volume=-4" not in graph
+    assert args.count("-i") == 2
+
+
+def test_slowmo_minterpolate_filter_and_audio_gain(testsrc_video, profile, tmp_path):
+    p = _slow_profile(profile, "minterpolate")
+    clip = Clip(source=testsrc_video, start=1, end=2, speed=0.5, interpolate=True)
+    args = render.build_command(timeline(testsrc_video, clips=[clip]), fmt(), tmp_path / "o.mp4", p)
+    graph = args[args.index("-filter_complex") + 1]
+    assert "minterpolate=fps=60.000:mi_mode=mci:mc_mode=aobmc:vsbmc=1,setpts=PTS/0.50000" in graph
+    assert "atempo=0.50000,volume=-4dB" in graph
+
+
+def test_slowmo_render_real_interpolates_frames(testsrc_video, profile, tmp_path):
+    clip = Clip(source=testsrc_video, start=1, end=2, speed=0.5, interpolate=True)
+    outs = {}
+    for mode, interp in (("mi", True), ("plain", False)):
+        c = clip.model_copy(update={"interpolate": interp})
+        p = _slow_profile(profile, "minterpolate")
+        out = render.render_timeline(
+            timeline(testsrc_video, clips=[c]), fmt(), tmp_path / f"{mode}.mp4", p
+        )
+        outs[mode] = out
+        assert ffmpeg.probe(out).duration == pytest.approx(2.0, abs=0.15)  # 2x la source
+    assert _unique_frames(outs["mi"]) > _unique_frames(outs["plain"]) * 1.3
+
+
+def test_slowmo_rife_path_uses_intermediate_and_cleans_up(
+    testsrc_video, profile, tmp_path, monkeypatch
+):
+    exe = tmp_path / "fake-rife"
+    exe.write_text(FAKE_RIFE.format(python=sys.executable))
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("MINAVIO_RIFE_BIN", str(exe))
+    p = _slow_profile(profile, "auto")
+    clip = Clip(source=testsrc_video, start=1, end=2, speed=0.5, interpolate=True)
+    tl = timeline(testsrc_video, clips=[clip])
+    outdir = tmp_path / "o"
+    out = render.render_timeline(tl, fmt(), outdir / "r.mp4", p)
+    assert ffmpeg.probe(out).duration == pytest.approx(2.0, abs=0.15)
+    assert [f.name for f in outdir.iterdir()] == ["r.mp4"]  # intermédiaires nettoyés
+    temps: list[Path] = []
+    args = render.build_command(tl, fmt(), outdir / "r.mp4", p, temps=temps)
+    assert len(temps) == 1 and args.count("-i") == 2  # source (audio) + vidéo interpolée
+    graph = args[args.index("-filter_complex") + 1]
+    assert "minterpolate" not in graph and "setpts=PTS/0.5" not in graph
+    for t in temps:
+        t.unlink(missing_ok=True)
+
+
+def _beep_track(path: Path, beep_at: float, total: float = 6.0) -> Path:
+    ff(
+        *("-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo:d={total}"),
+        *(
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=f=1000:r=48000:d=0.2,adelay={int(beep_at * 1000)}|{int(beep_at * 1000)}",
+        ),
+        *("-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:normalize=0[a]"),
+        *("-map", "[a]", "-c:a", "pcm_s16le", str(path)),
+    )
+    return path
+
+
+def _onset(path: Path) -> float:
+    import numpy as np
+
+    raw = ffmpeg.run_capture(
+        ["-i", str(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"]
+    )
+    x = np.abs(np.frombuffer(raw, dtype=np.float32))
+    return float(np.argmax(x > 0.3 * x.max()) / 8000)
+
+
+def test_audio_tracks_replace_source_audio_at_same_time(testsrc_video, profile, tmp_path):
+    pytest.importorskip("numpy")
+    track = _beep_track(tmp_path / "clean.wav", beep_at=2.0)
+    clip = Clip(source=testsrc_video, start=1.0, end=4.0)
+    tl = timeline(testsrc_video, clips=[clip], audio_tracks={testsrc_video: track})
+    args = render.build_command(tl, fmt(), tmp_path / "o.mp4", profile)
+    idx = [k for k, a in enumerate(args) if a == "-i"]
+    assert len(idx) == 2 and args[idx[1] + 1] == str(track)
+    assert args[idx[1] - 4 : idx[1]] == ["-ss", "1.0000", "-t", "3.0000"]  # même seek que la source
+    out = render.render_timeline(tl, fmt(), tmp_path / "o.mp4", profile)
+    assert _onset(out) == pytest.approx(1.0, abs=0.1)  # 2.0 s source - 1.0 s de seek
+    # sans piste de remplacement : la rafale 3.0-3.5 s de la source tombe à 2.0 s
+    base = render.render_timeline(
+        timeline(testsrc_video, clips=[clip]), fmt(), tmp_path / "b.mp4", profile
+    )
+    assert _onset(base) == pytest.approx(2.0, abs=0.15)
