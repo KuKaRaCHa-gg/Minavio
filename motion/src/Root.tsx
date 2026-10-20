@@ -1,5 +1,5 @@
 import React from 'react';
-import {Composition} from 'remotion';
+import {Composition, Still} from 'remotion';
 import type {CalculateMetadataFunction} from 'remotion';
 import {Captions, captionsSchema} from './templates/Captions';
 import {Title, titleSchema} from './templates/Title';
@@ -9,6 +9,11 @@ import {Reaction, reactionSchema} from './templates/Reaction';
 import {KillCounter, killCounterSchema} from './templates/KillCounter';
 import {Rewind, rewindSchema} from './templates/Rewind';
 import {RankCard, rankCardSchema} from './templates/RankCard';
+import {Thumbnail, thumbnailSchema} from './templates/Thumbnail';
+
+// GIF 1x1 : image de remplacement pour le Studio (le bridge Python fournit de vraies images).
+const PLACEHOLDER =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAMzMzAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==';
 
 type Base = {width: number; height: number; fps: number; durationInFrames: number};
 
@@ -97,6 +102,15 @@ export const RemotionRoot: React.FC = () => (
       durationInFrames={54}
       defaultProps={rankCardSchema.parse({rank: 3, total: 10, label: 'best fails'})}
       calculateMetadata={metadata()}
+    />
+    <Still
+      id="thumbnail"
+      component={Thumbnail}
+      schema={thumbnailSchema}
+      width={1280}
+      height={720}
+      defaultProps={thumbnailSchema.parse({images: [PLACEHOLDER], text: 'GG EZ'})}
+      calculateMetadata={async ({props}) => ({width: props.width, height: props.height})}
     />
   </>
 );
