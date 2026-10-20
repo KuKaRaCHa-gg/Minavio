@@ -24,20 +24,25 @@ MAX_VISION_CANDIDATES = 16
 THUMB_WIDTH = 512
 
 _EMOJI_RE = re.compile("[\U0001f000-\U0001faff\U00002600-\U000027bf\U0001f1e6-\U0001f1ff‍️]+")
-_LABEL_TEXT = {
-    "clutch": "CLUTCH 1V3",
-    "wipe": "SQUAD WIPED",
-    "squad_wipe": "SQUAD WIPED",
-    "squad_wiped": "SQUAD WIPED",
-    "kill": "INSANE KILL",
-    "knock": "DOWNED",
-    "fail": "EPIC FAIL",
-    "chaos": "TOTAL CHAOS",
-    "funny": "TROP DRÔLE",
-    "laugh": "IMPOSSIBLE DE SE RETENIR",
-    "rage": "RAGE",
-    "fact": "FUN FACT",
+# Accroches de secours (sans juge visuel). Jamais de fait chiffré inventé (« 1V3 », « 5 KILLS ») :
+# seul le LLM, qui voit l'image, ou l'utilisateur peut l'affirmer. Plusieurs par label = variété.
+_LABEL_TEXT: dict[str, list[str]] = {
+    "clutch": ["QUEL CLUTCH", "IL L'A FAIT", "PERSONNE N'Y CROYAIT"],
+    "multi_kill": ["SQUAD WIPED", "ILS SONT TOUS TOMBÉS", "CARNAGE"],
+    "wipe": ["SQUAD WIPED", "CARNAGE"],
+    "squad_wipe": ["SQUAD WIPED", "CARNAGE"],
+    "squad_wiped": ["SQUAD WIPED", "CARNAGE"],
+    "kill": ["INSANE KILL", "IL A PAS VU VENIR", "PROPRE"],
+    "knock": ["DOWNED", "IL TOMBE"],
+    "fail": ["EPIC FAIL", "C'ÉTAIT PAS PRÉVU"],
+    "chaos": ["TOTAL CHAOS", "N'IMPORTE QUOI"],
+    "scream": ["IL HURLE", "LA PANIQUE"],
+    "funny": ["TROP DRÔLE", "J'EN PEUX PLUS"],
+    "laugh": ["FOU RIRE", "J'EN PEUX PLUS"],
+    "rage": ["RAGE", "IL PÈTE UN CÂBLE"],
+    "fact": ["FUN FACT", "TU SAVAIS ?"],
 }
+_GENERIC_TEXT = ["À VOIR", "INCROYABLE", "REGARDE ÇA"]
 
 
 class _Item(BaseModel):
@@ -57,22 +62,24 @@ def _clean_text(text: str, max_words: int) -> str:
     return " ".join(words[:max_words]).upper()
 
 
-def _label_text(label: str | None, max_words: int) -> str:
+def _label_texts(label: str | None, max_words: int) -> list[str]:
     key = (label or "").strip().lower().replace(" ", "_")
-    if key in _LABEL_TEXT:
-        return _clean_text(_LABEL_TEXT[key], max_words)
-    for k, v in _LABEL_TEXT.items():
-        if k in key:
-            return _clean_text(v, max_words)
-    return _clean_text(key.replace("_", " "), max_words)
+    phrases = _LABEL_TEXT.get(key) or next((v for k, v in _LABEL_TEXT.items() if k in key), None)
+    if phrases is None:
+        phrases = [key.replace("_", " ")] if key else []
+    return [t for t in (_clean_text(x, max_words) for x in phrases) if t]
 
 
-def _fallback_text(i: int, cand: ThumbnailCandidate, copy: dict | None, max_words: int) -> str:
+def _fallback_text(
+    i: int, cand: ThumbnailCandidate, copy: dict | None, max_words: int, used: set[str]
+) -> str:
+    """1re variante : le hook du copy ; ensuite des accroches du label, jamais deux fois la même."""
     hook = _clean_text(str((copy or {}).get("hook") or ""), max_words)
-    label = _label_text(cand.label, max_words)
-    # Variété : la 1re variante reprend le hook, les suivantes les labels.
-    text = (hook or label) if i == 0 else (label or hook)
-    return text or "À VOIR"
+    pool = ([hook] if i == 0 and hook else []) + _label_texts(cand.label, max_words)
+    pool += ([hook] if hook else []) + [_clean_text(t, max_words) for t in _GENERIC_TEXT]
+    text = next((t for t in pool if t and t not in used), pool[0] if pool else "À VOIR")
+    used.add(text)
+    return text
 
 
 def _layouts(profile: ChannelProfile, count: int) -> list[str]:
@@ -111,6 +118,7 @@ def _heuristic(
     cfg = profile.thumbnails
     order = sorted(range(len(cands)), key=lambda i: cands[i].score, reverse=True)
     used: set[int] = set()
+    used_texts: set[str] = set()
     out = []
     for i, layout in enumerate(_layouts(profile, count)):
         n = min(LAYOUT_SIZE.get(layout, 1), len(cands))
@@ -127,7 +135,7 @@ def _heuristic(
                 layout,
                 ids,
                 cands,
-                _fallback_text(i, cands[ids[0]], copy, cfg.max_words),
+                _fallback_text(i, cands[ids[0]], copy, cfg.max_words, used_texts),
                 "Meilleures notes (sans juge visuel)",
             )
         )
@@ -191,6 +199,7 @@ def _vision_pick(
     all_ids = sorted(range(len(cands)), key=lambda i: cands[i].score, reverse=True)
     valid = set(range(len(cands)))
     used: set[int] = set()
+    used_texts: set[str] = set()
     out = []
     for i, layout in enumerate(layouts):
         item = resp.items[i] if i < len(resp.items) else _Item()
@@ -209,8 +218,9 @@ def _vision_pick(
             ids = ids[:n]
         used.update(ids)
         text = _clean_text(item.text, cfg.max_words) or _fallback_text(
-            i, cands[ids[0]], copy, cfg.max_words
+            i, cands[ids[0]], copy, cfg.max_words, used_texts
         )
+        used_texts.add(text)
         out.append(_compose(layout, ids, cands, text, item.reason))
     return out
 

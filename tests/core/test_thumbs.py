@@ -118,3 +118,19 @@ def test_unreadable_source_is_skipped(clips, profile, tmp_path, caplog):
 
 def test_empty(profile, tmp_path):
     assert extract_candidates([], profile, tmp_path) == []
+
+
+def test_partial_flash_frame_is_penalised():
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("cv2")
+    from minavio.core import thumbs
+
+    rng = np.random.default_rng(0)
+    normal = rng.integers(40, 200, (360, 640, 3), dtype=np.uint8)
+    flash = normal.copy()
+    flash[:, :300] = 255  # ~47 % brûlé, moyenne encore sous BRIGHT_LUMA
+    a = thumbs._Frame(path=Path("a.png"), t=0.0, hl=0)
+    b = thumbs._Frame(path=Path("b.png"), t=0.0, hl=0)
+    thumbs._measure(normal, a, None, None)
+    thumbs._measure(flash, b, None, None)
+    assert a.exposure == 1.0 and b.exposure < 0.2

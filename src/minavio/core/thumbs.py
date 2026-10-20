@@ -41,6 +41,7 @@ SHARP_PERCENTILE = 90
 SHARP_FLOOR = 20.0  # évite de gonfler le bruit quand tout l'ensemble est flou
 MOTION_FULL = 30.0  # écart moyen (0..255) jugé « flou de mouvement total »
 DARK_LUMA, BRIGHT_LUMA = 18.0, 238.0  # frames quasi noires / blanches (fondus, flashs)
+BLOWN_FRACTION = 0.35  # part de pixels brûlés en blanc au-delà de laquelle on pénalise
 MIN_ENTROPY = 2.0  # bits ; en dessous : image d'interface / aplat => pénalité croissante
 
 
@@ -95,7 +96,15 @@ def _measure(frame, f: _Frame, prev_gray, faces):
     f.vivid = 0.5 * contrast + 0.5 * sat
 
     luma = float(gray.mean())
-    f.exposure = 0.05 if (luma < DARK_LUMA or luma > BRIGHT_LUMA) else 1.0
+    # Flash partiel : la moyenne reste « normale » mais une grande zone est brûlée en blanc.
+    # (Le noir n'est pas compté : bandes noires d'un contenu 4:3, fonds de facecam…)
+    blown = float(np.mean(gray > 245))
+    if luma < DARK_LUMA or luma > BRIGHT_LUMA:
+        f.exposure = 0.05
+    elif blown > BLOWN_FRACTION:
+        f.exposure = 0.15
+    else:
+        f.exposure = 1.0
 
     hist = np.bincount((gray // 8).ravel(), minlength=32).astype(np.float64)
     p = hist[hist > 0] / hist.sum()

@@ -380,3 +380,26 @@ def test_thumbnails_with_vision(tmp_path):
 def test_thumbnails_prompt_sections_exist():
     for name in ("gaming", "tech_facts", "stream_bestof"):
         assert "JSON" in load_prompt(name, "thumbnails")
+
+
+def test_heuristic_texts_are_distinct_and_never_invent_numbers(tmp_path):
+    from minavio.config import load_profile
+    from minavio.core.models import ThumbnailCandidate
+    from minavio.llm.vision import pick_thumbnails
+
+    profile = load_profile("minivitch")
+    profile.thumbnails.use_vision_llm = False
+    cands = [
+        ThumbnailCandidate(
+            source=Path("a.mp4"),
+            t=i,
+            image=tmp_path / f"{i}.png",
+            score=0.9 - i / 10,
+            label="clutch",
+        )
+        for i in range(4)
+    ]
+    choices = pick_thumbnails(cands, profile, copy=None, llm=None)
+    texts = [c.text for c in choices]
+    assert len(set(texts)) == len(texts)
+    assert not any(ch.isdigit() for t in texts for ch in t)
