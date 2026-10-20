@@ -237,6 +237,13 @@ def test_no_keyword_anywhere_is_skipped(mocked, video, profile, caplog):
     assert any("introuvable" in r.message for r in caplog.records)
 
 
+def test_game_without_keywords_is_not_scanned(mocked, video, profile):
+    # Jeu sans texte d'interface connu (horreur...) : pas de balayage OCR inutile.
+    fake = mocked([(0.0, 40.0, "ELIMINATED", 0.0)], killfeed="  keywords: {}")
+    assert detect.run_detectors([video], _profile(profile)) == []
+    assert fake.crops == []
+
+
 def test_missing_rapidocr_is_unavailable_not_a_crash(monkeypatch, tmp_path, video, profile, caplog):
     monkeypatch.setitem(sys.modules, "rapidocr", None)
     cfg = tmp_path / "cfg" / "games" / "tg"

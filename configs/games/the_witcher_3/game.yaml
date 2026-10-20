@@ -1,5 +1,5 @@
 id: the_witcher_3
-name: The Witcher 3: Wild Hunt
+name: "The Witcher 3: Wild Hunt"
 genre: action_adventure
 modes: [solo, pve]
 combo_window_s: 6.5
@@ -15,14 +15,4 @@ killfeed:
       - QUÊTE TERMINÉE
       - CONTRACT COMPLETE # libellé exact à confirmer selon type de quête
       - CONTRAT TERMINÉ # traduction FR à confirmer
-    discovery:
-      - QUEST UPDATED
-      - QUÊTE MISE À JOUR
-      - NEW MARKER # libellé mini-carte à confirmer
-      - NOUVEAU MARQUEUR # traduction FR à confirmer
-    achievement:
-      - LEVEL UP
-      - NIVEAU SUPÉRIEUR
-      - bestiary updated # libellé codex à confirmer
-      - bestiaire mis à jour # traduction FR à confirmer
 ui_templates: []

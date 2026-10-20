@@ -6,43 +6,5 @@ combo_window_s: 8.0
 killfeed:
   roi: null
   player_names: []
-  keywords:
-    death:
-      - teammate down
-      - coéquipier à terre
-      # Texte incertain : HUD encore variable selon build.
-      - operator deceased
-      - opérateur décédé
-    team_wipe:
-      - crew lost
-      - équipe éliminée
-      - mission failed
-      - mission échouée
-    extraction:
-      - extraction point
-      - point d'extraction
-      - evac ready
-      # Texte incertain : peut apparaître comme extraction ready.
-      - évacuation prête
-    victory:
-      - objective complete
-      - objectif accompli
-      - shipment secured
-      # Texte incertain : vocabulaire vu en captures communautaires.
-      - cargaison sécurisée
-    jumpscare:
-      - incoming threat
-      - menace imminente
-      - behind you
-      - derrière toi
-    friendly_fire:
-      - friendly fire
-      - tir allié
-      - teammate hit
-      - coéquipier touché
-    funny:
-      - chaos
-      - panique
-      - scream laugh
-      - rire nerveux
+  keywords: {} # textes de l'interface non confirmés (accès anticipé) : audio + juge visuel uniquement
 ui_templates: []

@@ -25,7 +25,4 @@ killfeed:
     victory:
       - HOST OF FINGERS DEFEATED
       - HÔTE DES DOIGTS VAINCU
-    achievement:
-      - achievement unlocked # libellé plateforme (Steam/Xbox/PlayStation), pas un bandeau HUD garanti
-      - succès déverrouillé # traduction plateforme variable selon l'OS
 ui_templates: []

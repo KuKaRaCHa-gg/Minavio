@@ -7,37 +7,10 @@ killfeed:
   roi: null
   player_names: []
   keywords:
-    death:
-      - player dead
-      - joueur mort
-      - you are dead
-      - vous êtes mort
     team_wipe:
-      - all employees lost
-      # Texte incertain : libellé exact selon version.
-      - équipage éliminé
-      - no survivors
-      - aucun survivant
-    extraction:
-      - ship leaving
-      - vaisseau au départ
-      - return to ship
-      - retour au vaisseau
+      - all employees lost # fin de journée sans survivant (à confirmer)
+      - no survivors # à confirmer
     victory:
-      - quota reached
+      - quota reached # écran de quota (à confirmer)
       - quota atteint
-      - company goal met
-      # Texte incertain : message exact en fin de journée.
-      - objectif de la compagnie atteint
-    jumpscare:
-      - scream
-      - cri
-      - behind you
-      - derrière toi
-    funny:
-      - honk
-      - rire
-      - panic laugh
-      # Texte incertain : peut venir surtout du vocal.
-      - fou rire
 ui_templates: []

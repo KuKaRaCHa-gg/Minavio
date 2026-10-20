@@ -439,9 +439,14 @@ def killfeed_ocr(sources: list[Path], params: dict, profile: ChannelProfile) -> 
     games: list[GameProfile] = []
     for game_id in profile.games:
         try:
-            games.append(config.load_game(game_id, config.CONFIG_DIR))
+            game = config.load_game(game_id, config.CONFIG_DIR)
         except ConfigError as e:
             log.warning("Jeu '%s' ignoré : %s", game_id, e)
+            continue
+        if game.killfeed.keywords:  # aucun texte d'interface connu : rien à lire (audio/vision)
+            games.append(game)
+        else:
+            log.info("killfeed_ocr : aucun mot-clé pour '%s', jeu ignoré", game_id)
     if not games:
         return []
     ocr = _make_ocr()  # DetectorUnavailable si RapidOCR absent
