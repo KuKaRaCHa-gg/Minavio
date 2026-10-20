@@ -132,3 +132,67 @@ export const anchorTop = (
   if (position === 'center') return box.top + Math.round((box.height - blockHeight) / 2);
   return box.top + box.height - blockHeight;
 };
+
+/** Crâne 8x8 (1 = plein, 2 = orbite/creux). */
+const SKULL_BITMAP = [
+  '00111100',
+  '01111110',
+  '11111111',
+  '12211221',
+  '12211221',
+  '11111111',
+  '01122110',
+  '01011010',
+];
+
+/** Icône crâne pixel en SVG net (`px` = taille d'un pixel logique). */
+export const PixelSkull: React.FC<{
+  px: number;
+  color: string;
+  hole?: string;
+  outline?: string;
+}> = ({px, color, hole = '#000000', outline}) => (
+  <svg
+    width={px * 8}
+    height={px * 8}
+    viewBox="0 0 8 8"
+    shapeRendering="crispEdges"
+    style={{display: 'block'}}
+  >
+    {outline
+      ? SKULL_BITMAP.flatMap((row, y) =>
+          row.split('').map((c, x) =>
+            c !== '0' ? (
+              <rect key={`o${x}-${y}`} x={x - 0.25} y={y - 0.25} width={1.5} height={1.5} fill={outline} />
+            ) : null,
+          ),
+        )
+      : null}
+    {SKULL_BITMAP.flatMap((row, y) =>
+      row.split('').map((c, x) =>
+        c === '0' ? null : <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill={c === '2' ? hole : color} />,
+      ),
+    )}
+  </svg>
+);
+
+/** Triangle pixel (flèche de rembobinage), construit en CSS : indépendant des glyphes de la fonte. */
+export const PixelArrow: React.FC<{size: number; color: string; dir?: 'left' | 'right'}> = ({
+  size,
+  color,
+  dir = 'left',
+}) => (
+  <span
+    style={{
+      display: 'inline-block',
+      width: size * 0.7,
+      height: size,
+      marginRight: size * 0.15,
+      background: color,
+      clipPath:
+        dir === 'left'
+          ? 'polygon(75% 0, 100% 0, 100% 100%, 75% 100%, 75% 87.5%, 50% 87.5%, 50% 75%, 25% 75%, 25% 62.5%, 0 62.5%, 0 37.5%, 25% 37.5%, 25% 25%, 50% 25%, 50% 12.5%, 75% 12.5%)'
+          : 'polygon(0 0, 25% 0, 25% 12.5%, 50% 12.5%, 50% 25%, 75% 25%, 75% 37.5%, 100% 37.5%, 100% 62.5%, 75% 62.5%, 75% 75%, 50% 75%, 50% 87.5%, 25% 87.5%, 25% 100%, 0 100%)',
+    }}
+  />
+);

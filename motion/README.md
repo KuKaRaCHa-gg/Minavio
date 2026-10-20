@@ -2,7 +2,7 @@
 
 Projet Remotion 4 (React/TS). Fonte *Press Start 2P* via `@remotion/google-fonts`, rendu net,
 animations en paliers. Compositions : `captions`, `title`, `popup`, `progress-bar` (template Python
-`progress_bar`), `reaction`. Props communes : `width`, `height`, `fps`, `durationInFrames`,
+`progress_bar`), `reaction`, `kill-counter`, `rewind`, `rank-card` (Python : `kill_counter`, `rewind`, `rank_card`). Props communes : `width`, `height`, `fps`, `durationInFrames`,
 `theme {primary, accent}`, `beats` (s, relatifs à l'overlay), `scanlines`, `style` (`pixel`|`clean`).
 
 ```
@@ -15,3 +15,16 @@ npx remotion still src/index.ts captions out.png --props=props.json
 Le rendu de production passe par `minavio.motion.render.render_overlays` (ProRes 4444 alpha).
 Sans accès à fonts.gstatic.com, `loadFont` échoue : repli `monospace`.
 Navigateur personnalisé : variable `MINAVIO_BROWSER_EXECUTABLE`.
+
+## Templates lot Minivitch
+
+| Python | Composition | Props propres | Durée typique |
+| :--- | :--- | :--- | :--- |
+| `kill_counter` | `kill-counter` | `kills` 1..5, `label?` (défaut : KILL / DOUBLE KILL / TRIPLE KILL / SQUAD WIPED pour 4 et 5) | 2 s |
+| `rewind` | `rewind` | `text?` (défaut `REWIND ◀◀`) | 0,6 à 1 s |
+| `rank_card` | `rank-card` | `rank`, `total`, `label?` | 1,8 s |
+
+- `kill_counter` : haut-droite en 16:9, haut-centre en 9:16 ; un crâne s'allume toutes les 0,25 s, flash + shake à la dernière.
+- `rewind` : plein cadre, fond semi-transparent ; les flèches ◀ / ▶ sont dessinées en CSS (la fonte n'a pas ces glyphes).
+- `rank_card` : gauche en 16:9, haut-centre en 9:16 ; entrée en glissement par paliers.
+- Repli FFmpeg sans Node : `kill_counter` (texte du label) et `rank_card` (`#N`) ; `rewind` lève `MotionUnavailableError` si strict, sinon est ignoré.

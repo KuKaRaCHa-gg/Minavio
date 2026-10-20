@@ -6,6 +6,9 @@ import {Title, titleSchema} from './templates/Title';
 import {Popup, popupSchema} from './templates/Popup';
 import {ProgressBar, progressBarSchema} from './templates/ProgressBar';
 import {Reaction, reactionSchema} from './templates/Reaction';
+import {KillCounter, killCounterSchema} from './templates/KillCounter';
+import {Rewind, rewindSchema} from './templates/Rewind';
+import {RankCard, rankCardSchema} from './templates/RankCard';
 
 type Base = {width: number; height: number; fps: number; durationInFrames: number};
 
@@ -66,6 +69,33 @@ export const RemotionRoot: React.FC = () => (
       schema={reactionSchema}
       {...common}
       defaultProps={reactionSchema.parse({})}
+      calculateMetadata={metadata()}
+    />
+    <Composition
+      id="kill-counter"
+      component={KillCounter}
+      schema={killCounterSchema}
+      {...common}
+      durationInFrames={60}
+      defaultProps={killCounterSchema.parse({kills: 3})}
+      calculateMetadata={metadata()}
+    />
+    <Composition
+      id="rewind"
+      component={Rewind}
+      schema={rewindSchema}
+      {...common}
+      durationInFrames={24}
+      defaultProps={rewindSchema.parse({})}
+      calculateMetadata={metadata()}
+    />
+    <Composition
+      id="rank-card"
+      component={RankCard}
+      schema={rankCardSchema}
+      {...common}
+      durationInFrames={54}
+      defaultProps={rankCardSchema.parse({rank: 3, total: 10, label: 'best fails'})}
       calculateMetadata={metadata()}
     />
   </>

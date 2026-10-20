@@ -138,3 +138,50 @@ def test_unknown_template(fake_motion, tmp_path):
     assert render.render_overlays(tl, FMT, THEME, tmp_path) == {}
     with pytest.raises(MotionUnavailableError, match="inconnu"):
         render.render_overlays(tl, FMT, THEME, tmp_path, strict=True)
+
+
+def test_new_templates_composition_ids(fake_motion, tmp_path):
+    _, calls = fake_motion
+    tl = _timeline(
+        Overlay(template="kill_counter", start=0, duration=2, props={"kills": 3}),
+        Overlay(template="rewind", start=1, duration=0.8, props={}),
+        Overlay(template="rank_card", start=2, duration=1.8, props={"rank": 3, "total": 10}),
+    )
+    out = render.render_overlays(tl, FMT, THEME, tmp_path / "o")
+    assert len(out) == 3
+    ids = [c["cmd"][5] for c in calls]
+    assert ids == ["kill-counter", "rewind", "rank-card"]
+
+
+def test_kill_label_defaults_and_override():
+    assert render.kill_label({"kills": 2}) == "DOUBLE KILL"
+    assert render.kill_label({"kills": 5}) == "SQUAD WIPED"
+    assert render.kill_label({"kills": 1, "label": "boom"}) == "BOOM"
+
+
+def test_fallback_kill_counter_and_rank_card_without_node(tmp_path, monkeypatch):
+    monkeypatch.setenv("MINAVIO_MOTION_DIR", str(tmp_path / "absent"))
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd=None, **kw):
+        calls.append(cmd)
+        Path(cmd[-1]).write_bytes(b"mov")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(render.subprocess, "run", fake_run)
+    tl = _timeline(
+        Overlay(template="kill_counter", start=0, duration=2, props={"kills": 3}),
+        Overlay(template="rank_card", start=2, duration=1.8, props={"rank": 4, "total": 10}),
+    )
+    out = render.render_overlays(tl, FMT, THEME, tmp_path / "o")
+    assert len(out) == 2 and all(c[0] == "ffmpeg" for c in calls)
+    texts = sorted(p.read_text() for p in (tmp_path / "o").glob("*.txt"))
+    assert texts == ["#4", "TRIPLE KILL"]
+
+
+def test_rewind_without_node(tmp_path, monkeypatch):
+    monkeypatch.setenv("MINAVIO_MOTION_DIR", str(tmp_path / "absent"))
+    tl = _timeline(Overlay(template="rewind", start=0, duration=0.8, props={}))
+    assert render.render_overlays(tl, FMT, THEME, tmp_path / "o") == {}
+    with pytest.raises(MotionUnavailableError, match="rewind"):
+        render.render_overlays(tl, FMT, THEME, tmp_path / "o", strict=True)
