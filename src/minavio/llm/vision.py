@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from minavio.config.schema import ChannelProfile
 from minavio.core.models import ThumbnailCandidate, ThumbnailChoice
 from minavio.errors import LLMUnavailableError
+from minavio.llm.kb import query_from, with_knowledge
 from minavio.llm.prompts import load_prompt
 
 log = logging.getLogger(__name__)
@@ -188,8 +189,17 @@ def _vision_pick(
         user += "Titre / hook de la vidéo : " + json.dumps(
             {"title": copy.get("title"), "hook": copy.get("hook")}, ensure_ascii=False
         )
+    query = query_from(
+        "miniature",
+        *(c.label for c in cands),
+        copy.get("title") if copy else None,
+        copy.get("hook") if copy else None,
+    )
+    system = with_knowledge(
+        load_prompt(profile.llm.prompt, "thumbnails"), profile, "thumbnails", query, llm
+    )
     messages = [
-        {"role": "system", "content": load_prompt(profile.llm.prompt, "thumbnails")},
+        {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
     with tempfile.TemporaryDirectory(prefix="minavio_thumbs_") as td:

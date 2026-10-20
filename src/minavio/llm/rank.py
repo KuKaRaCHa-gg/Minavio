@@ -12,6 +12,7 @@ from minavio.core.models import Highlight, TranscriptSegment
 from minavio.errors import LLMUnavailableError
 from minavio.llm._context import CONTEXT_PAD_S, estimate_tokens, transcript_context
 from minavio.llm.client import LocalLLM
+from minavio.llm.kb import query_from, with_knowledge
 from minavio.llm.prompts import load_prompt
 
 log = logging.getLogger(__name__)
@@ -94,7 +95,14 @@ def rank_highlights(
         return _fallback(highlights, limit)
 
     llm = llm or LocalLLM.from_settings(profile.llm)
-    system = load_prompt(profile.llm.prompt, "rank")
+    query = query_from(
+        *(
+            part
+            for h in highlights[:20]
+            for part in (h.label, h.reason, transcript_context(transcript, h.start, h.end, 160))
+        )
+    )
+    system = with_knowledge(load_prompt(profile.llm.prompt, "rank"), profile, "rank", query, llm)
     system_tokens = estimate_tokens(system)
     budget = min(TOKEN_BUDGET, getattr(llm, "context_budget_tokens", TOKEN_BUDGET))
     blocks = [(i, _candidate_block(i, h, transcript)) for i, h in enumerate(highlights)]

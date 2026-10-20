@@ -15,6 +15,7 @@ from minavio.core.models import Chapter, Highlight, Moment, Timeline
 from minavio.errors import LLMUnavailableError
 from minavio.llm._context import transcript_context
 from minavio.llm.client import LocalLLM
+from minavio.llm.kb import query_from, with_knowledge
 from minavio.llm.prompts import load_prompt
 
 log = logging.getLogger(__name__)
@@ -187,8 +188,12 @@ def _llm_titles(
         f"Durée de la vidéo : {timeline.duration:.0f}s.\nChapitres :\n"
         + json.dumps(ctx, ensure_ascii=False, indent=1)
     )
+    query = query_from(*(part for c in ctx for part in (c["label"], c["reason"])), "chapitres")
+    system = with_knowledge(
+        load_prompt(profile.llm.prompt, "chapters"), profile, "chapters", query, llm
+    )
     messages = [
-        {"role": "system", "content": load_prompt(profile.llm.prompt, "chapters")},
+        {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
     try:

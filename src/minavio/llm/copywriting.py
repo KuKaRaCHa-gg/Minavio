@@ -12,6 +12,7 @@ from minavio.core.models import Highlight, TranscriptSegment
 from minavio.errors import LLMUnavailableError
 from minavio.llm._context import transcript_context
 from minavio.llm.client import LocalLLM
+from minavio.llm.kb import query_from, with_knowledge
 from minavio.llm.prompts import load_prompt
 
 log = logging.getLogger(__name__)
@@ -114,8 +115,13 @@ def generate_copy(
         f"Durée totale du montage : {total:.1f}s.\nMoments :\n"
         + json.dumps(moments, ensure_ascii=False, indent=1)
     )
+    query = query_from(
+        profile.description,
+        *(part for m in moments for part in (m["label"], m["reason"], m["transcript"][:200])),
+    )
+    system = with_knowledge(load_prompt(profile.llm.prompt, "copy"), profile, "copy", query, llm)
     messages = [
-        {"role": "system", "content": load_prompt(profile.llm.prompt, "copy")},
+        {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
     try:
