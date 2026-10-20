@@ -89,6 +89,17 @@ class Fakes:
             self._rec("render_overlays")
             return {}
 
+        def sfx(timeline, settings):
+            self._rec("sfx")
+            return []
+
+        def chapters(timeline, highlights, profile):
+            self._rec("chapters")
+            return []
+
+        def format_chapters(chapters):
+            return "\n".join(f"{c.start} {c.title}" for c in chapters)
+
         def render(timeline, fmt, out, profile, overlay_files=None):
             self._rec(f"render:{fmt.name}")
             out.write_bytes(b"x")
@@ -103,6 +114,9 @@ class Fakes:
             "rank_highlights": rank,
             "generate_copy": copy,
             "plan_timeline": plan,
+            "plan_sfx": sfx,
+            "generate_chapters": chapters,
+            "format_chapters": format_chapters,
             "build_caption_overlays": caps,
             "render_overlays": ov,
             "render_timeline": render,
@@ -166,7 +180,8 @@ def test_step_order_and_json(env):
         "overlays",
     ):
         assert (res.work_dir / f"{step}.json").exists(), step
-    assert len(res.outputs) == 2
+    # 2 formats principaux + 1 short (un seul highlight dans les fakes)
+    assert len(res.outputs) == 3
     assert all(o.exists() and o.parent.name == "minivitch" for o in res.outputs)
     ov = json.loads((res.work_dir / "overlays.json").read_text())
     assert [o["template"] for o in ov] == ["title", "popup"]
@@ -209,7 +224,7 @@ def test_llm_failure_is_warning(env):
     fakes, _ = env
     fakes.fail = {"rank", "copy"}
     res = job(env)
-    assert len(res.outputs) == 2
+    assert len(res.outputs) == 3
     assert any("rank" in w for w in res.warnings)
 
 
@@ -259,7 +274,7 @@ def test_required_step_failure_wrapped(env):
 )
 def test_format_selection(env, wanted, names):
     fakes, _ = env
-    job(env, formats=wanted)
+    job(env, formats=wanted, shorts=0)
     assert [c.split(":")[1] for c in fakes.calls if c.startswith("render:")] == names
 
 
@@ -353,7 +368,7 @@ def test_autocut_failure_is_warning_and_continues(env):
     res = job(env)
     assert any("autocut" in w for w in res.warnings)
     assert fakes.plan_kwargs["keep_spans"] is None
-    assert len(res.outputs) == 2
+    assert len(res.outputs) == 3
     assert not (res.work_dir / "autocut.json").exists()
 
 

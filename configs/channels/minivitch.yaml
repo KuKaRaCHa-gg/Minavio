@@ -28,12 +28,14 @@ detection:
   - { name: audio_peak, weight: 0.6, params: { min_db_above_median: 12 } }
   - { name: speech, weight: 0.4 }                # réactions vocales (cris, rires)
   - { name: hype, weight: 0.8 }                  # pics d'intensité combinés
+  - { name: scene_change, weight: 0.3, params: { backend: auto } }  # changements de plan
 
 audio:
   music_dir: assets/music/minivitch
   beat_sync: true
   loudness_lufs: -14
   ducking: { enabled: true, music_gain_db: -16 }
+  sfx: { enabled: true }                         # whoosh / hit / boom / rewind (CC0, locaux)
 
 llm:
   prompt: gaming
@@ -41,7 +43,7 @@ llm:
 
 motion:
   theme: { primary: "#FF3B30", accent: "#FFD60A", font: "Press Start 2P" }
-  templates: [title, popup, reaction, captions]
+  templates: [title, popup, reaction, captions, kill_counter, rewind]
   captions: { enabled: true, word_by_word: true, position: bottom, style: pixel }
 
 editing:
@@ -51,8 +53,15 @@ editing:
   max_clip_s: 20
   pre_roll_s: 3.0     # contexte avant le clutch
   post_roll_s: 1.5
+  cold_open: { enabled: true, duration_s: 2.5 }  # ouverture sur le meilleur pic, puis rewind
   # Le jeu fait du bruit (coups, musique, voix) : coupe légère, seuil d'énergie relevé.
   autocut: { enabled: true, min_silence_s: 1.2, energy_margin_db: 4, punch_in: 1.0 }
 
 framing:
   smoothing: { beta: 0.04, max_pan_per_s: 0.5 }  # plus réactif que le défaut
+
+# Chapitres YouTube (out/<profil>/<job>_chapters.txt), générés par le LLM local.
+chapters: true
+
+# Shorts : un par meilleur moment, en plus de la compilation (`minavio run --shorts N`).
+shorts: { per_highlight: 3, max_duration_s: 30, format: shorts }

@@ -1,0 +1,70 @@
+# Profil Top 10 : copie de minivitch en compte à rebours (editing.order: countdown).
+# Écarts par rapport à minivitch.yaml : order, max_highlights, rank_card, max_highlights, durée, shorts.
+# Profil de chaîne (schéma : `minavio schema`, validation : `minavio profiles validate`).
+# Champs clés :
+#   games      ids de configs/games/<id>/ utilisés par le détecteur template_match.
+#   outputs    formats rendus (name, aspect, résolution, fps, reframe, max_duration_s) ;
+#              sélectionnables avec `minavio run --format <name|aspect>`.
+#   detection  détecteurs et poids (weight) qui pondèrent le score des highlights.
+#   audio      music_dir (musique choisie de façon déterministe), beat_sync, loudness, ducking.
+#   llm        prompt (fichier de src/minavio/llm/prompts/), max_highlights ;
+#              base_url/model surchargés par MINAVIO_LLM_BASE_URL / MINAVIO_LLM_MODEL.
+#   motion     theme (couleurs, fonte), templates Remotion, style des sous-titres mot-à-mot.
+#   editing    pacing, durée cible, bornes de clip, pre/post-roll autour de chaque moment ;
+#              editing.autocut coupe les silences (et recale la coupe sur le rythme de parole).
+#   framing    smoothing : lissage du suivi de cadrage (reframe face_track / action_track) ;
+#              facecam : détection et découpe de la facecam pour reframe split_facecam.
+#   Référence des blocs et détecteurs : configs/README.md.
+id: minivitch_top10
+display_name: "Minivitch — Top 10"
+content_type: gaming
+description: Top 10 de moments chaotiques, du moins bon au meilleur (compte à rebours).
+games: [apex_legends]
+
+outputs:
+  - { name: youtube, aspect: "16:9", width: 1920, height: 1080, fps: 60, reframe: none }
+  - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 60, reframe: action_track, max_duration_s: 59 }
+
+detection:
+  - { name: template_match, weight: 1.0 }        # kills / knocks / win depuis games/*
+  - { name: audio_peak, weight: 0.6, params: { min_db_above_median: 12 } }
+  - { name: speech, weight: 0.4 }                # réactions vocales (cris, rires)
+  - { name: hype, weight: 0.8 }                  # pics d'intensité combinés
+  - { name: scene_change, weight: 0.3, params: { backend: auto } }  # changements de plan
+
+audio:
+  music_dir: assets/music/minivitch
+  beat_sync: true
+  loudness_lufs: -14
+  ducking: { enabled: true, music_gain_db: -16 }
+  sfx: { enabled: true }                         # whoosh / hit / boom / rewind (CC0, locaux)
+
+llm:
+  prompt: gaming
+  max_highlights: 10
+
+motion:
+  theme: { primary: "#FF3B30", accent: "#FFD60A", font: "Press Start 2P" }
+  templates: [title, popup, reaction, captions, kill_counter, rewind, rank_card]
+  captions: { enabled: true, word_by_word: true, position: bottom, style: pixel }
+
+editing:
+  pacing: hyper
+  order: countdown          # du moins bon au meilleur : rank_card N…1
+  target_duration_s: 420
+  min_clip_s: 2
+  max_clip_s: 20
+  pre_roll_s: 3.0     # contexte avant le clutch
+  post_roll_s: 1.5
+  cold_open: { enabled: true, duration_s: 2.5 }  # ouverture sur le meilleur pic, puis rewind
+  # Le jeu fait du bruit (coups, musique, voix) : coupe légère, seuil d'énergie relevé.
+  autocut: { enabled: true, min_silence_s: 1.2, energy_margin_db: 4, punch_in: 1.0 }
+
+framing:
+  smoothing: { beta: 0.04, max_pan_per_s: 0.5 }  # plus réactif que le défaut
+
+# Chapitres YouTube, comme minivitch.
+chapters: true
+
+# Shorts : un par meilleur moment, en plus de la compilation (`minavio run --shorts N`).
+shorts: { per_highlight: 0, max_duration_s: 30, format: shorts }  # désactivés sur ce profil

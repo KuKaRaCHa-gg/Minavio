@@ -123,6 +123,18 @@ def run(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Stop après timeline.json.")] = False,
     resume: Annotated[bool, typer.Option("--resume", help="Réutilise les JSON de work/.")] = False,
     out: Annotated[Path, typer.Option("--out", help="Dossier de sortie.")] = Path("out"),
+    shorts: Annotated[
+        int | None,
+        typer.Option(
+            "--shorts",
+            min=0,
+            max=10,
+            help="Shorts par meilleur moment (0 = désactivé). Défaut : shorts.per_highlight.",
+        ),
+    ] = None,
+    no_chapters: Annotated[
+        bool, typer.Option("--no-chapters", help="Ne génère pas les chapitres YouTube.")
+    ] = False,
     verbose: Verbose = False,
 ) -> None:
     """Détecte les moments forts, monte et rend les vidéos."""
@@ -139,6 +151,8 @@ def run(
             dry_run=dry_run,
             resume=resume,
             out_dir=out,
+            shorts=shorts,
+            chapters=not no_chapters,
         )
     except MinavioError as e:
         raise _fail(e, verbose) from e
@@ -148,3 +162,5 @@ def run(
         typer.echo(f"Timeline : {result.timeline_path}")
     for o in result.outputs:
         typer.echo(str(o))
+    for x in result.extras:
+        typer.echo(str(x))
