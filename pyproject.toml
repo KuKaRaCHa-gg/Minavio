@@ -21,7 +21,8 @@ hype = ["panns-inference>=0.1", "torch>=2.3"]
 ui = ["gradio>=6,<7"]
 cloud = ["anthropic>=1"]
 publish = ["google-api-python-client>=2", "google-auth-oauthlib>=1"]
-all = ["minavio[vision,audio,cleanaudio,ocr,asr,hype,ui,cloud,publish]"]
+watch = ["watchdog>=4"]
+all = ["minavio[vision,audio,cleanaudio,ocr,asr,hype,ui,cloud,publish,watch]"]
 
 [project.scripts]
 minavio = "minavio.cli:app"

@@ -61,6 +61,24 @@ timeline, overlays…) : on peut l'inspecter, le corriger à la main et relancer
 | `MINAVIO_BROWSER_EXECUTABLE` | Chromium à utiliser par Remotion (sinon il le télécharge) |
 | `MINAVIO_MOTION_DIR`, `MINAVIO_FONT` | projet Remotion / fonte du repli FFmpeg |
 
+## Ingestion automatique
+
+`minavio watch` surveille un dossier de clips (Outplayed) et lance le montage par lots :
+
+```bash
+uv run minavio watch minivitch "%USERPROFILE%\Videos\Outplayed"   # Ctrl+C pour arrêter
+uv run minavio watch minivitch ./clips --once                     # scanne, traite, quitte
+```
+
+- Un clip est traité une fois stable (taille et date inchangées pendant `--stable`, 30 s par défaut).
+  Les clips stables sont groupés : le lot part après `--batch` secondes sans nouveau clip (600 s),
+  ou à 20 clips.
+- Un montage en échec est marqué `failed` dans `work/.watch_<profil>.json` et n'est pas relancé
+  seul. Pour le relancer, supprime son entrée dans ce fichier (ou modifie le clip) puis relance.
+- Aucune publication : la mise en ligne reste `minavio publish`.
+- Installation : `uv sync --extra watch` (surveillance temps réel via watchdog ; sans lui, scrutation).
+- Windows : `scripts/minavio-watch.bat` ; pour le lancer à la connexion, voir le commentaire en tête du script.
+
 ## Miniatures
 
 Si `thumbnails.enabled` (profil), `minavio run` produit après les rendus des miniatures
