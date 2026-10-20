@@ -1690,6 +1690,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "typer" },
@@ -1748,6 +1749,7 @@ requires-dist = [
     { name = "onnxruntime", marker = "extra == 'audio'", specifier = ">=1.18" },
     { name = "opencv-python-headless", marker = "extra == 'vision'", specifier = ">=4.9" },
     { name = "panns-inference", marker = "extra == 'hype'", specifier = ">=0.1" },
+    { name = "pillow", specifier = ">=10" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "scenedetect", marker = "extra == 'vision'", specifier = ">=0.7" },
