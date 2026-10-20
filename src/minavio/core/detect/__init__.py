@@ -7,6 +7,7 @@ from minavio.core.detect import (
     scene_change,
     speech,
     template_match,
+    vision_scan,
 )
 from minavio.core.detect.registry import (
     DETECTORS,
@@ -28,4 +29,5 @@ __all__ = [
     "scene_change",
     "speech",
     "template_match",
+    "vision_scan",
 ]
