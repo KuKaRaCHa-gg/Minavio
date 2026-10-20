@@ -164,3 +164,24 @@ def run(
         typer.echo(str(o))
     for x in result.extras:
         typer.echo(str(x))
+
+
+@app.command("ui")
+def ui(
+    port: Annotated[int, typer.Option(help="Port local de l'interface.")] = 7860,
+    no_browser: Annotated[
+        bool, typer.Option("--no-browser", help="Ne pas ouvrir le navigateur.")
+    ] = False,
+    out: Annotated[Path | None, typer.Option("--out", help="Dossier de sortie par défaut.")] = None,
+) -> None:
+    """Ouvre l'interface graphique (navigateur, en local uniquement)."""
+    try:
+        from minavio.ui.app import launch
+    except ImportError as e:
+        typer.secho(
+            f"Erreur : interface indisponible ({e}). Installe-la : uv sync --extra ui",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(1) from e
+    launch(port=port, open_browser=not no_browser, out_dir=out)

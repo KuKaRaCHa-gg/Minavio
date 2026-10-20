@@ -231,7 +231,7 @@ def build_run_args(
     """Arguments de `minavio run` (liste, jamais de shell)."""
     if not inputs.strip():
         raise MinavioError("Choisis le dossier de clips à monter.")
-    args = [sys.executable, "-m", "minavio.cli", "run", profile_id, str(Path(inputs).expanduser())]
+    args = [sys.executable, "-m", "minavio", "run", profile_id, str(Path(inputs).expanduser())]
     if music.strip():
         args += ["--music", str(Path(music.strip()).expanduser())]
     if formats is not None and all_formats is not None and set(formats) != set(all_formats):
@@ -339,6 +339,10 @@ def run_job_process(args: list[str], cwd: Path) -> Iterator[tuple[JobState, subp
         state.feed(line)
         yield state, proc
     state.returncode = proc.wait()
+    if state.returncode == 0 and not state.done and not state.outputs:
+        # Sortie « propre » sans aucune étape : rien n'a tourné (commande mal formée…).
+        state.returncode = -1
+        state.error = state.error or "le montage n'a exécuté aucune étape (voir le journal)"
     yield state, proc
 
 
