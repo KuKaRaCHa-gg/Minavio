@@ -78,6 +78,10 @@ def _clip_segments(
         stretch = interpolate.interpolation_filter(clip.speed, fmt.fps, interp_mode)
     else:
         stretch = f"setpts=PTS/{clip.speed:.5f}"
+    path = plan.path
+    if path and clip.interpolate and interp_mode == "rife":
+        # entrée déjà ralentie (durée / speed) : chemin en temps source étiré d'autant
+        path = [(t / clip.speed, cx) for t, cx in path]
     seg = [
         f"[{v_in}:v]setpts=PTS-STARTPTS[t{i}]",
         *reframe.build_reframe(
@@ -88,7 +92,7 @@ def _clip_segments(
             info.height,
             fmt.width,
             fmt.height,
-            plan.path,
+            path,
             f"c{i}",
             zoom=plan.zoom,
             facecam=plan.facecam,

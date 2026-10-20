@@ -304,3 +304,34 @@ def test_audio_tracks_replace_source_audio_at_same_time(testsrc_video, profile, 
         timeline(testsrc_video, clips=[clip]), fmt(), tmp_path / "b.mp4", profile
     )
     assert _onset(base) == pytest.approx(2.0, abs=0.15)
+
+
+def _rife_env(tmp_path, monkeypatch):
+    exe = tmp_path / "fake-rife"
+    exe.write_text(FAKE_RIFE.format(python=sys.executable))
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("MINAVIO_RIFE_BIN", str(exe))
+
+
+def test_rife_reframe_path_follows_slowed_input_time(testsrc_video, profile, tmp_path, monkeypatch):
+    """En rife l'entrée est déjà ralentie : les temps du chemin (source) sont étirés de 1/speed."""
+    _rife_env(tmp_path, monkeypatch)
+    path = [(0.0, 0.3), (1.0, 0.7)]
+    monkeypatch.setattr(
+        reframe,
+        "plan_clip",
+        lambda *a, **k: reframe.ClipReframe(mode="action_track", path=path),
+    )
+    clip = Clip(source=testsrc_video, start=1, end=2, speed=0.5, interpolate=True)
+    tl = timeline(testsrc_video, clips=[clip])
+    f = fmt("9:16", 180, 320, "action_track")
+    temps: list[Path] = []
+    p = _slow_profile(profile, "auto")
+    rife = render.build_command(tl, f, tmp_path / "o.mp4", p, temps=temps)
+    graph = rife[rife.index("-filter_complex") + 1]
+    assert "lt(t,2.000)" in graph and "lt(t,1.000)" not in graph  # fin du chemin à 2 s (1 / 0.5)
+    for t in temps:
+        t.unlink(missing_ok=True)
+    # minterpolate : ralenti après le reframe, chemin inchangé
+    mi = render.build_command(tl, f, tmp_path / "o.mp4", _slow_profile(profile, "minterpolate"))
+    assert "lt(t,1.000)" in mi[mi.index("-filter_complex") + 1]

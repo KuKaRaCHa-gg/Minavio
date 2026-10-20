@@ -295,3 +295,36 @@ def test_real_rapidocr_on_synthetic_killfeed(tmp_path, monkeypatch, profile):
     assert hs[1].signals["peak_t"] == pytest.approx(14.0, abs=0.75)
     (roi,) = kf._ROI_CACHE.values()
     assert roi[0] > 0.4 and roi[1] < 0.3 and roi[0] + roi[2] <= 1.0
+
+
+def test_frames_early_stop_ignores_epipe_exit_code(monkeypatch, tmp_path):
+    """Arrêt volontaire (limit) : un code de sortie ffmpeg exotique (EPIPE) n'est pas une erreur."""
+    pytest.importorskip("numpy")
+    src = tmp_path / "v.mp4"
+    ff("-f", "lavfi", "-i", "testsrc=size=64x64:rate=10:d=2", "-pix_fmt", "yuv420p", str(src))
+    info = ffmpeg.probe(src)
+
+    real_popen = kf.subprocess.Popen
+
+    class Proc:
+        def __init__(self, *a, **k):
+            self._p = real_popen(*a, **k)
+            self.stdout = self._p.stdout
+
+        def poll(self):
+            return self._p.poll()
+
+        def kill(self):
+            self._p.kill()
+
+        def wait(self):
+            self._p.wait()
+            return 141  # SIGPIPE/EPIPE
+
+    monkeypatch.setattr(kf.subprocess, "Popen", Proc)
+    frames = kf._frames(src, info, 10, None, 64)
+    next(frames)
+    frames.close()  # lecteur qui s'arrête tôt : ne doit pas lever
+    # lecture complète avec code d'erreur réel : l'erreur reste signalée
+    with pytest.raises(ffmpeg.FFmpegError):
+        list(kf._frames(src, info, 10, None, 64))
