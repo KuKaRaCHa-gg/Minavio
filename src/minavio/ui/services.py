@@ -523,14 +523,29 @@ def provider_rows(profile_id: str, ping: bool = False) -> list[list[str]]:
         name = f"{p.llm.model} @ {p.llm.base_url}"
         rows.append(["1", "local", p.llm.model, "—", _state(pings, name, ping)])
         return rows
-    ping_list = list(pings.values())
     for i, prov in enumerate(providers, 1):
         env = prov.api_key_env or DEFAULT_KEY_ENV.get(prov.kind)
         key = secret_status([env])[env] if env else "—"
         model = prov.model or ("défaut" if prov.kind != "local" else p.llm.model)
-        state = ping_list[i - 1] if ping and i - 1 < len(ping_list) else "non testé"
+        state = _ping_one(prov, p.llm) if ping else "non testé"
         rows.append([str(i), prov.kind, model, key, state])
     return rows
+
+
+def _ping_one(prov, settings) -> str:
+    """Teste CE fournisseur, pas la chaîne (elle saute ceux sans clé : décalage des lignes)."""
+    from minavio.llm.providers import build_provider
+
+    try:
+        client = build_provider(prov, settings)
+    except MinavioError as e:
+        return f"❌ {e}"
+    if client is None:
+        return "⏭ ignoré : clé absente"
+    try:
+        return "✅ ok" if client.ping() else "❌ injoignable ou clé refusée"
+    except Exception as e:  # jamais de valeur de clé dans le message : erreurs du client
+        return f"❌ {e}"
 
 
 def _state(pings: dict, name: str, ping: bool) -> str:

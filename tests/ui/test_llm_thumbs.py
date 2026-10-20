@@ -1,7 +1,5 @@
 import os
-import sys
 import time
-import types
 from types import SimpleNamespace
 
 from minavio.config import secrets
@@ -62,17 +60,15 @@ def test_save_and_remove_key():
 
 
 def test_provider_rows_chain(monkeypatch):
+    from minavio.llm import providers as prov_mod
+
     secrets.set_secret("ANTHROPIC_API_KEY", "sk-ant-abcdefgh1234")
-    mod = types.ModuleType("minavio.llm.client")
-    mod.LocalLLM = SimpleNamespace(
-        from_settings=lambda s: SimpleNamespace(
-            providers=[
-                SimpleNamespace(name="local", ping=lambda: True),
-                SimpleNamespace(name="claude", ping=lambda: False),
-            ]
-        )
+    pings = {"local": True, "anthropic": False}
+    monkeypatch.setattr(
+        prov_mod,
+        "build_provider",
+        lambda prov, settings: SimpleNamespace(ping=lambda: pings[prov.kind]),
     )
-    monkeypatch.setitem(sys.modules, "minavio.llm.client", mod)
     rows = svc.provider_rows("minivitch")
     assert [r[1] for r in rows] == ["local", "anthropic"]
     assert rows[1][3] == "fichier" and rows[0][4] == "non testé"
@@ -83,3 +79,32 @@ def test_provider_rows_chain(monkeypatch):
 
 def test_profile_defaults_thumbnails():
     assert svc.profile_defaults("minivitch")["thumbnails"] is True
+
+
+def test_provider_rows_ping_each_provider_not_chain_position(monkeypatch, tmp_path):
+    """Claude sans clé en 1er, local en 2e : chaque ligne porte SON état (pas celui du voisin)."""
+    from minavio.config.schema import LlmProvider
+    from minavio.llm import providers as prov_mod
+    from minavio.ui import services as svc
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("MINAVIO_SECRETS_FILE", str(tmp_path / "s.env"))
+    real_load = svc.load_profile
+
+    def fake_load(pid):
+        p = real_load(pid)
+        p.llm.providers = [LlmProvider(kind="anthropic"), LlmProvider(kind="local")]
+        return p
+
+    class FakeLocal:
+        def ping(self):
+            return True
+
+    def fake_build(prov, settings):
+        return None if prov.kind == "anthropic" else FakeLocal()
+
+    monkeypatch.setattr(svc, "load_profile", fake_load)
+    monkeypatch.setattr(prov_mod, "build_provider", fake_build)
+    rows = svc.provider_rows("minivitch", ping=True)
+    assert [r[1] for r in rows] == ["anthropic", "local"]
+    assert rows[0][4] == "⏭ ignoré : clé absente" and rows[1][4] == "✅ ok"
