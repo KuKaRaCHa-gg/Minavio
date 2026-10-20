@@ -54,8 +54,10 @@ def merge_highlights(highlights: list[Highlight]) -> list[Highlight]:
             for m in members:  # explicabilité : max par signal sur les détecteurs fusionnés
                 for k, v in m.signals.items():
                     signals[k] = max(v, signals.get(k, v))
-            if "peak_t" in best.signals:  # un instant ne se « maximise » pas : celui du meilleur
-                signals["peak_t"] = best.signals["peak_t"]
+            # Un instant ne se « maximise » pas : celui du meilleur membre qui en a un.
+            timed = [m for m in members if "peak_t" in m.signals]
+            if timed:
+                signals["peak_t"] = max(timed, key=lambda x: x.score).signals["peak_t"]
             merged.append(
                 Highlight(
                     source=source,

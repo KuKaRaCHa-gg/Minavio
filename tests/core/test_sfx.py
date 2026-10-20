@@ -47,7 +47,8 @@ def test_kill_and_multi_kill():
 def test_cold_open_cue_at_end_and_no_double_cut():
     t = tl([clip(40, 43, "kill"), clip(0, 5, "x"), clip(90, 95, "y")], cold=1)
     cues = sfx.plan_sfx(t, sets(on_kill=None))
-    assert [(c.sound, round(c.at, 2)) for c in cues] == [("rewind", 3.0), ("whoosh", 7.92)]
+    # rewind démarre avec la transition visuelle : fin du cold open (3 s) - 0,8 s
+    assert [(c.sound, round(c.at, 2)) for c in cues] == [("rewind", 2.2), ("whoosh", 7.92)]
 
 
 def test_none_disables_events():
@@ -166,3 +167,17 @@ def test_sfx_beyond_max_duration_skipped(quiet_video, profile, tmp_path):
     f = fmt().model_copy(update={"max_duration_s": 2.0})
     cmd = render.build_command(t, f, tmp_path / "o.mp4", profile)
     assert "adelay" not in " ".join(cmd)
+
+
+def test_hit_lands_on_kill_instant_not_middle():
+    from minavio.core.models import Clip
+
+    a = Path("a.mp4")
+    t = Timeline(
+        profile_id="p",
+        fps=30,
+        # pre-roll 3 s / post-roll 1,5 s : kill à 34 s source = 3 s dans le moment (milieu 2,25)
+        clips=[Clip(source=a, start=31, end=35.5, highlight_label="kill", moment=0, peak_t=34)],
+    )
+    cues = sfx.plan_sfx(t, sets(on_cut=None))
+    assert [(c.sound, round(c.at, 2)) for c in cues] == [("hit", 3.0)]

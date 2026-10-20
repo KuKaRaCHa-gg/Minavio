@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from minavio.config.schema import SfxSettings
-from minavio.core.models import SfxCue, Timeline
+from minavio.core.models import REWIND_DURATION_S, SfxCue, Timeline
 
 log = logging.getLogger(__name__)
 
@@ -58,15 +58,19 @@ def plan_sfx(timeline: Timeline, settings: SfxSettings) -> list[SfxCue]:
         after_cold_open = i > 0 and moments[i - 1].cold_open and not m.cold_open
         if i > 0 and settings.on_cut and not (after_cold_open and settings.on_cold_open):
             add(m.start - CUT_LEAD_S, settings.on_cut)
-        mid = (m.start + m.end) / 2
-        if m.label == "kill" and settings.on_kill:
-            add(mid, settings.on_kill)
+        at = m.peak if m.peak is not None else (m.start + m.end) / 2  # instant du kill
+        if m.cold_open:
+            pass  # pas de hit/boom dans le cold open : il rejoue le moment, qui aura les siens
+        elif m.label == "kill" and settings.on_kill:
+            add(at, settings.on_kill)
         elif m.label == "multi_kill" and settings.on_multi_kill:
-            add(mid, settings.on_multi_kill)
-            add(mid + MULTI_KILL_SECOND_HIT_S, "hit")
+            add(at, settings.on_multi_kill)
+            if settings.on_kill:
+                add(at + MULTI_KILL_SECOND_HIT_S, settings.on_kill)
         last_cold = m.cold_open and (i + 1 == len(moments) or not moments[i + 1].cold_open)
         if last_cold and settings.on_cold_open:
-            add(m.end, settings.on_cold_open)
+            # Même départ que l'overlay visuel `rewind` (pipeline) : fin du cold open - durée.
+            add(max(m.start, m.end - REWIND_DURATION_S), settings.on_cold_open)
 
     total = timeline.duration
     return sorted((c for c in cues if c.at < total), key=lambda c: c.at)

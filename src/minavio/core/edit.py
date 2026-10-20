@@ -279,7 +279,14 @@ def plan_timeline(
         best = max(windows, key=lambda x: x.score)  # à score égal : le premier chronologiquement
         span = _cold_open_clip(best, cold_cfg.duration_s, keep_spans)
         if span:
-            cold = Clip(source=best.source, start=span[0], end=span[1], highlight_label=best.label)
+            cold = Clip(
+                source=best.source,
+                start=span[0],
+                end=span[1],
+                highlight_label=best.label,
+                moment=-1,
+                peak_t=best.peak,
+            )
     cold_dur = cold.duration / cold.speed if cold else 0.0
 
     if ed.order == "countdown":
@@ -289,10 +296,20 @@ def plan_timeline(
 
     punch = ed.autocut.punch_in
     clips: list[Clip] = [cold] if cold else []
-    for w in windows:
+    for mid, w in enumerate(windows):
         for k, (s, e) in enumerate(_fragments(w, keep_spans)):
             zoom = punch if punch > 1 and k % 2 == 1 else 1.0
-            clips.append(Clip(source=w.source, start=s, end=e, highlight_label=w.label, zoom=zoom))
+            clips.append(
+                Clip(
+                    source=w.source,
+                    start=s,
+                    end=e,
+                    highlight_label=w.label,
+                    zoom=zoom,
+                    moment=mid,
+                    peak_t=w.peak,
+                )
+            )
     n_real = len(clips) - (1 if cold else 0)
     timeline = Timeline(
         profile_id=profile.id,

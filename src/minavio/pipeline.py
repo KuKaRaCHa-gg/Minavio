@@ -38,6 +38,7 @@ from typing import Any
 
 from minavio.config.schema import ChannelProfile, OutputFormat
 from minavio.core.models import (
+    REWIND_DURATION_S,
     Chapter,
     Highlight,
     Moment,
@@ -56,7 +57,6 @@ POPUP_SNAP_S = 2.0
 KILL_COUNTER_DELAY_S = 0.3  # le compteur apparaît 0,3 s après le début du moment
 KILL_COUNTER_DURATION_S = 2.0
 RANK_CARD_DURATION_S = 1.5
-REWIND_DURATION_S = 0.8  # le rewind se joue sur la dernière seconde du cold open
 MAX_SHORTS = 10
 AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".aac"}
 
@@ -263,7 +263,7 @@ def build_overlays(
 
     Le titre se place au début du premier vrai moment quand il y a un cold open, sinon à t=0.
     Motion (seulement si le template est dans `motion.templates`) :
-    - `kill_counter` : 0,3 s après le début d'un moment `kill` / `multi_kill` (hors cold open) ;
+    - `kill_counter` : calé sur l'instant du kill (`Moment.peak`), sinon 0,3 s après le début ;
     - `rank_card` : début de chaque vrai moment si `editing.order == "countdown"` (N…1) ;
     - `rewind` : sur la dernière seconde du cold open.
     """
@@ -310,7 +310,11 @@ def build_overlays(
                     _timed(
                         timeline,
                         "kill_counter",
-                        m.start + KILL_COUNTER_DELAY_S,
+                        # Un crâne s'allume toutes les 0,25 s : le dernier (flash) tombe sur
+                        # l'instant du kill quand il est connu.
+                        max(m.start, m.peak - 0.25 * kills)
+                        if m.peak is not None
+                        else m.start + KILL_COUNTER_DELAY_S,
                         KILL_COUNTER_DURATION_S,
                         {"kills": kills},
                     )

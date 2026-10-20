@@ -73,3 +73,19 @@ def test_timeline_moments_group_autocut_fragments():
         (3, 3, False),
     ]
     assert (ms[1].start, ms[1].end) == (2.0, 5.5)
+
+
+def test_moments_use_ids_not_heuristics():
+    a = Path("a.mp4")
+    clips = [
+        # Deux highlights distincts, même source/label, écart < 3 s : 2 moments.
+        Clip(source=a, start=7, end=13.5, highlight_label="kill", moment=0, peak_t=10),
+        Clip(source=a, start=14, end=20.5, highlight_label="kill", moment=1, peak_t=17),
+        # Un highlight coupé par l'autocut avec un creux de 4 s : 1 seul moment.
+        Clip(source=a, start=30, end=33, highlight_label="kill", moment=2, peak_t=38),
+        Clip(source=a, start=37, end=40, highlight_label="kill", moment=2, peak_t=38),
+    ]
+    ms = Timeline(profile_id="t", fps=30, clips=clips).moments()
+    assert [(m.first_clip, m.last_clip) for m in ms] == [(0, 0), (1, 1), (2, 3)]
+    # peak en temps timeline : 6.5 + 6.5 + 3 + (38 - 37) = 17.0
+    assert [m.peak for m in ms] == [3.0, 9.5, 17.0]

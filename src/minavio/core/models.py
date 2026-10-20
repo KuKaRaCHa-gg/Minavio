@@ -71,6 +71,10 @@ class Clip(_TimeSpan):
     speed: float = Field(default=1.0, gt=0)
     highlight_label: str | None = None
     zoom: float = Field(default=1.0, ge=1.0, le=2.0)  # punch-in centré (masque les jump-cuts)
+    # Posés par plan_timeline : identifiant du moment (fragments d'autocut d'une même fenêtre =
+    # même id ; cold open = -1) et instant décisif du moment (kill, pic), en temps SOURCE.
+    moment: int | None = None
+    peak_t: float | None = None
 
 
 class SfxCue(_Model):
@@ -112,40 +116,51 @@ class Timeline(_Model):
         return out
 
     def moments(self) -> list[Moment]:
-        """Regroupe les clips en moments : les sous-clips d'autocut d'un même moment sont
-        consécutifs, même source, même label, écart source < MOMENT_GAP_S. Le cold open est
-        toujours un moment à part (index 0 si présent)."""
+        """Regroupe les clips consécutifs d'un même moment. Source de vérité : `Clip.moment`
+        (posé par plan_timeline). Repli pour les timelines sans ids : même source, même label,
+        écart source < MOMENT_GAP_S. Le cold open est toujours un moment à part."""
         starts = self.clip_starts()
+        use_ids = bool(self.clips) and all(c.moment is not None for c in self.clips)
         moments: list[Moment] = []
         for i, c in enumerate(self.clips):
             prev = self.clips[i - 1] if i else None
-            same = (
-                prev is not None
-                and i != self.cold_open_clips
-                and c.source == prev.source
-                and c.highlight_label == prev.highlight_label
-                and 0 <= c.start - prev.end < MOMENT_GAP_S
-            )
-            if same:
-                m = moments[-1]
-                moments[-1] = m.model_copy(
-                    update={"end": starts[i] + c.duration / c.speed, "last_clip": i}
+            if prev is None or i == self.cold_open_clips:
+                same = False
+            elif use_ids:
+                same = c.moment == prev.moment
+            else:
+                same = (
+                    c.source == prev.source
+                    and c.highlight_label == prev.highlight_label
+                    and 0 <= c.start - prev.end < MOMENT_GAP_S
                 )
+            end = starts[i] + c.duration / c.speed
+            if same:
+                moments[-1] = moments[-1].model_copy(update={"end": end, "last_clip": i})
             else:
                 moments.append(
                     Moment(
                         start=starts[i],
-                        end=starts[i] + c.duration / c.speed,
+                        end=end,
                         first_clip=i,
                         last_clip=i,
                         label=c.highlight_label,
                         cold_open=i < self.cold_open_clips,
                     )
                 )
+        # Instant décisif en temps timeline : le clip du moment qui contient peak_t.
+        for k, m in enumerate(moments):
+            for i in range(m.first_clip, m.last_clip + 1):
+                c = self.clips[i]
+                if c.peak_t is not None and c.start <= c.peak_t < c.end:
+                    peak = starts[i] + (c.peak_t - c.start) / c.speed
+                    moments[k] = m.model_copy(update={"peak": peak})
+                    break
         return moments
 
 
 MOMENT_GAP_S = 3.0
+REWIND_DURATION_S = 0.8  # transition rewind (visuel + son) sur la fin du cold open
 
 
 class Moment(_TimeSpan):
@@ -155,3 +170,4 @@ class Moment(_TimeSpan):
     last_clip: int
     label: str | None = None
     cold_open: bool = False
+    peak: float | None = None  # instant décisif (temps timeline), si le moment le contient

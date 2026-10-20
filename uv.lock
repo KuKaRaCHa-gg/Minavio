@@ -1506,7 +1506,7 @@ requires-dist = [
     { name = "panns-inference", marker = "extra == 'hype'", specifier = ">=0.1" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "scenedetect", marker = "extra == 'vision'", specifier = ">=0.6" },
+    { name = "scenedetect", marker = "extra == 'vision'", specifier = ">=0.7" },
     { name = "silero-vad", marker = "extra == 'audio'", specifier = ">=5.1" },
     { name = "torch", marker = "extra == 'hype'", specifier = ">=2.3" },
     { name = "typer", specifier = ">=0.12" },
