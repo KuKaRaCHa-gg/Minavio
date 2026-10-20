@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from minavio.config.schema import ChannelProfile
 from minavio.core.models import ThumbnailCandidate, ThumbnailChoice
 from minavio.errors import LLMUnavailableError
-from minavio.llm.kb import query_from, with_knowledge
+from minavio.llm.kb import genre_query, query_from, with_knowledge
 from minavio.llm.prompts import load_prompt
 
 log = logging.getLogger(__name__)
@@ -191,6 +191,7 @@ def _vision_pick(
         )
     query = query_from(
         "miniature",
+        genre_query(profile),
         *(c.label for c in cands),
         copy.get("title") if copy else None,
         copy.get("hook") if copy else None,

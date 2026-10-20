@@ -7,7 +7,11 @@ Les fiches intégrées sont dans `minavio/llm/knowledge/`. Les fiches de l'utili
 Une fiche = un fichier `.md` découpé en sections `##` (un passage chacune). Directive optionnelle
 en commentaire HTML dans le fichier :
 
-    <!-- kb: tasks=rank,copy; content_type=gaming; tags=topic:foo,game:bar -->
+    <!-- kb: tasks=rank,copy; content_type=gaming; genre=soulslike; mode=pve; tags=topic:foo -->
+
+`genre=` (valeurs de `GameProfile.genre`) et `mode=` (pvp, pve, solo, coop) restreignent la fiche
+aux profils dont AU MOINS UN jeu (`configs/games/<id>/game.yaml`) a ce genre / ce mode. Un jeu
+absent ou invalide est ignoré ; une fiche `content_type=gaming` sans `genre` reste générique.
 
 Les tags viennent du chemin : `games/<id>.md` -> `game:<id>`, `channels/<id>.md` ->
 `channel:<id>`,
@@ -130,6 +134,8 @@ class Passage:
     tags: frozenset[str]
     tasks: frozenset[str]
     content_types: frozenset[str] = frozenset()
+    genres: frozenset[str] = frozenset()
+    modes: frozenset[str] = frozenset()
     core: bool = False
     user: bool = False
     tokens: tuple[str, ...] = field(default=(), repr=False, compare=False)
@@ -180,6 +186,8 @@ def parse_document(rel: str, text: str, *, user: bool = False) -> list[Passage]:
     directive = _parse_directive(text)
     tasks = frozenset(_csv(directive["tasks"])) if "tasks" in directive else ALL_TASKS
     ctypes = frozenset(_csv(directive.get("content_type", "")))
+    genres = frozenset(_csv(directive.get("genre", "")))
+    modes = frozenset(_csv(directive.get("mode", "")))
     tags = _path_tags(rel) | set(_csv(directive.get("tags", "")))
     h1 = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
     doc_title = h1.group(1).strip() if h1 else Path(rel).stem
@@ -205,6 +213,8 @@ def parse_document(rel: str, text: str, *, user: bool = False) -> list[Passage]:
                 tags=frozenset(tags),
                 tasks=tasks,
                 content_types=ctypes,
+                genres=genres,
+                modes=modes,
                 core=core,
                 user=user,
                 tokens=tokens,
@@ -314,11 +324,89 @@ def bm25_scores(
 # --------------------------------------------------------------------------- filtres
 
 
+def _config_dir() -> Path:
+    """Dossier de configuration courant (lu à chaque appel : `MINAVIO_CONFIG_DIR` ou défaut)."""
+    from minavio import config
+
+    env = os.environ.get("MINAVIO_CONFIG_DIR")
+    return Path(env) if env else Path(config.CONFIG_DIR)
+
+
+@lru_cache(maxsize=64)
+def _game_traits(game_id: str, config_dir: str) -> tuple[str, frozenset[str]] | None:
+    try:
+        from minavio.config import load_game
+
+        game = load_game(game_id, Path(config_dir))
+        return str(game.genre), frozenset(str(m) for m in game.modes)
+    except Exception as exc:  # jeu absent ou invalide : ignoré, jamais bloquant
+        log.debug("Jeu '%s' ignoré pour la base de connaissances : %s", game_id, exc)
+        return None
+
+
+def clear_game_cache() -> None:
+    """Vide le cache des genres/modes de jeux (après modification d'un `game.yaml`)."""
+    _game_traits.cache_clear()
+
+
+def game_traits(profile: ChannelProfile) -> list[tuple[str, frozenset[str]]]:
+    """(genre, modes) de chaque jeu du profil dont le `game.yaml` est lisible."""
+    cdir = str(_config_dir())
+    found = (_game_traits(g, cdir) for g in getattr(profile, "games", None) or [])
+    return [t for t in found if t is not None]
+
+
+# Mots-clés par genre pour les requêtes (alignés sur le vocabulaire des fiches `genres/`).
+GENRE_TERMS: dict[str, str] = {
+    "battle_royale": "killfeed kill knock clutch squad wipe champion victoire",
+    "tactical_fps": "round ace clutch bombe spike killfeed",
+    "arena_shooter": "killfeed kill multi kill frag",
+    "extraction_shooter": "extraction raid butin loot kill survived",
+    "moba": "teamfight penta kill ace nexus baron",
+    "fighting": "combo ko round perfect super",
+    "racing": "course dépassement arrivée accident",
+    "sports": "but goal arrêt overtime match",
+    "soulslike": "boss you died mort victoire barre de vie",
+    "action_adventure": "boss cinématique découverte quête",
+    "horror": "jumpscare horreur cri monstre peur",
+    "survival": "survie construction mort découverte",
+    "sandbox": "construction build minecraft survie découverte",
+    "roguelike": "run build boss mort objets",
+    "coop_pve": "coop pve extraction wave stratagème tir allié boss",
+    "strategy": "victoire défaite bataille",
+    "rhythm": "combo score perfect",
+}
+MODE_TERMS: dict[str, str] = {
+    "pvp": "joueurs adverses kill",
+    "pve": "boss ennemis monstres mort",
+    "solo": "solo histoire découverte boss",
+    "coop": "coop équipe chaos tir allié",
+}
+
+
+def genre_query(profile: ChannelProfile) -> str:
+    """Mots-clés issus des genres et modes des jeux du profil (vide si aucun jeu lisible)."""
+    seen: list[str] = []
+    for genre, modes in game_traits(profile):
+        for key, table in [(genre, GENRE_TERMS), *((m, MODE_TERMS) for m in sorted(modes))]:
+            if key != "other":
+                seen.append(key.replace("_", " "))
+            if key in table:
+                seen.append(table[key])
+    return " ".join(dict.fromkeys(seen))
+
+
 def applies(p: Passage, profile: ChannelProfile, task: str) -> bool:
-    """Le passage concerne-t-il ce profil (jeux, chaîne, type de contenu) et cette tâche ?"""
+    """Le passage concerne-t-il ce profil (jeux, genre, chaîne, type de contenu) et cette tâche ?"""
     if task not in p.tasks:
         return False
     ctype = str(getattr(profile.content_type, "value", profile.content_type))
+    if p.genres or p.modes:
+        traits = game_traits(profile)
+        if p.genres and not any(g in p.genres for g, _ in traits):
+            return False
+        if p.modes and not any(p.modes & m for _, m in traits):
+            return False
     if p.content_types:  # fiche générique pour un type de contenu (ex. FPS pour `gaming`)
         return ctype in p.content_types
     games = p.tag_values("game")

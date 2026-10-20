@@ -1,4 +1,4 @@
-<!-- kb: tasks=rank,copy,chapters,vision_scan,thumbnails; content_type=gaming -->
+<!-- kb: tasks=rank,copy,chapters,vision_scan,thumbnails; content_type=gaming; genre=battle_royale,tactical_fps,arena_shooter,extraction_shooter -->
 # FPS et battle royale (notions communes)
 
 ## Killfeed et élimination

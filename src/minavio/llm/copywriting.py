@@ -12,7 +12,7 @@ from minavio.core.models import Highlight, TranscriptSegment
 from minavio.errors import LLMUnavailableError
 from minavio.llm._context import transcript_context
 from minavio.llm.client import LocalLLM
-from minavio.llm.kb import query_from, with_knowledge
+from minavio.llm.kb import genre_query, query_from, with_knowledge
 from minavio.llm.prompts import load_prompt
 
 log = logging.getLogger(__name__)
@@ -117,6 +117,7 @@ def generate_copy(
     )
     query = query_from(
         profile.description,
+        genre_query(profile),
         *(part for m in moments for part in (m["label"], m["reason"], m["transcript"][:200])),
     )
     system = with_knowledge(load_prompt(profile.llm.prompt, "copy"), profile, "copy", query, llm)

@@ -29,7 +29,29 @@ from minavio.llm.providers import LLMChain, build_provider
 
 log = logging.getLogger(__name__)
 
-EVENTS = ("kill", "multi_kill", "knock", "clutch", "win", "fail", "funny", "chaos", "none")
+EVENTS = (
+    # PvP / commun
+    "kill",
+    "multi_kill",
+    "knock",
+    "clutch",
+    "win",
+    "fail",
+    "funny",
+    "chaos",
+    # PvE, solo, coop, sport, construction
+    "boss_kill",
+    "death",
+    "near_death",
+    "jumpscare",
+    "victory",
+    "goal",
+    "overtake",
+    "combo",
+    "discovery",
+    "build_reveal",
+    "none",
+)
 IMAGE_WIDTH = 448
 FRAME_OFFSETS = (-1.0, 0.0, 1.0)
 CHEAP_DETECTORS = ("audio_peak", "scene_change", "motion_intensity")
@@ -229,11 +251,10 @@ def _load_disk(path: Path) -> dict[str, Any]:
 
 def _system(profile: ChannelProfile, llm: LLMChain) -> str:
     """Prompt système + fiches de connaissances (jeux de la chaîne : quoi repérer à l'image)."""
-    from minavio.llm.kb import query_from, with_knowledge
+    from minavio.llm.kb import genre_query, query_from, with_knowledge
 
-    query = query_from(
-        profile.display_name, *profile.games, "killfeed kill knock clutch squad wipe finish"
-    )
+    # Requête issue du genre et des modes des jeux (killfeed pour un BR, boss pour un soulslike...)
+    query = query_from(profile.display_name, *profile.games, genre_query(profile) or "moment fort")
     return with_knowledge(
         load_prompt(profile.llm.prompt, "vision_scan"), profile, "vision_scan", query, llm
     )
