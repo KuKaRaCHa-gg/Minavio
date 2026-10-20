@@ -89,4 +89,11 @@ def alpha_overlay(media_dir: Path) -> Path:
 
 @pytest.fixture
 def profile() -> ChannelProfile:
-    return load_profile("minivitch")
+    # Profil réel, mais options du lot Minivitch coupées : les tests unitaires du cœur
+    # vérifient le comportement de base ; chaque test d'option l'active explicitement.
+    p = load_profile("minivitch")
+    p.editing.cold_open.enabled = False
+    p.audio.sfx.enabled = False
+    p.shorts.per_highlight = 0
+    p.chapters = False
+    return p

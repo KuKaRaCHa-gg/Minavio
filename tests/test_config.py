@@ -12,7 +12,7 @@ from minavio.errors import ConfigError
 
 
 def test_three_channel_profiles_are_valid():
-    assert list_profiles() == ["bytetricks", "minivitch", "thelostchat"]
+    assert list_profiles() == ["bytetricks", "minivitch", "minivitch_top10", "thelostchat"]
     for pid in list_profiles():
         profile = load_profile(pid)
         assert {o.aspect for o in profile.outputs} == {"16:9", "9:16"}
