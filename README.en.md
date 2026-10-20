@@ -34,7 +34,7 @@ On Windows: double-click `scripts/minavio-ui.bat`. The interface only listens on
 
 | Tab | Role |
 | :--- | :--- |
-| 🎬 Editing | pipeline, clips folder, music, formats, Shorts, Qwen/chapters; step-by-step progress, cancellation, produced videos, title/description/chapters |
+| 🎬 Editing | channel / profile, clips folder, music, formats, Shorts, Qwen/chapters; step-by-step progress, cancellation, produced videos, title/description/chapters |
 | 🖼️ Thumbnails | choose a recent job (`work/`), custom text and layout (hero / split / collage), generate and download PNGs |
 | 🎯 Game captures | upload a screenshot, crop the element (kill marker, etc.), save it in the right place |
 | ⚙️ Settings | edit YAML profiles, validated before saving (`.bak` kept) |
