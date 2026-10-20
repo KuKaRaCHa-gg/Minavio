@@ -77,7 +77,10 @@ class _FakeQwen(BaseHTTPRequestHandler):
     def do_POST(self):
         self.hits.append(self.path)
         req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        prompt = " ".join(m["content"] for m in req["messages"])
+        prompt = " ".join(
+            c if isinstance(c, str) else " ".join(x.get("text", "") for x in c)
+            for c in (m["content"] for m in req["messages"])
+        )  # le contenu peut être une liste (texte + images) pour le juge visuel
         if '"hook"' in prompt:
             content = {
                 "title": "Deux clutchs de fou",
