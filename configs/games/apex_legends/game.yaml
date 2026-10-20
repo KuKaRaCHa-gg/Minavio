@@ -1,6 +1,8 @@
 # Nouveau jeu = copier ce dossier, changer les templates. Aucun code à écrire.
 id: apex_legends
 name: Apex Legends
+genre: battle_royale
+modes: [pvp, coop]  # trios en ligne
 combo_window_s: 6.0
 # Lecture OCR du killfeed : aucune capture à fournir. roi: null = zone trouvée automatiquement
 # (la ROI trouvée est loguée en info : la recopier ici pour sauter l'auto-localisation).

@@ -309,9 +309,36 @@ class KillfeedSettings(_Model):
     player_names: list[str] = Field(default_factory=list)  # pseudo(s) du joueur : kill « à nous »
 
 
+GameGenre = Literal[
+    "battle_royale",
+    "tactical_fps",
+    "arena_shooter",
+    "extraction_shooter",
+    "moba",
+    "fighting",
+    "racing",
+    "sports",
+    "soulslike",
+    "action_adventure",
+    "horror",
+    "survival",
+    "sandbox",
+    "roguelike",
+    "coop_pve",
+    "strategy",
+    "rhythm",
+    "other",
+]
+GameMode = Literal["pvp", "pve", "solo", "coop"]
+
+
 class GameProfile(_Model):
     id: str
     name: str
+    # Genre et modes : orientent la base de connaissances, le juge visuel et les labels attendus
+    # (kill/clutch en PvP, boss/mort/jumpscare en PvE ou solo).
+    genre: GameGenre = "other"
+    modes: list[GameMode] = Field(default_factory=list)
     ui_templates: list[UiTemplate] = Field(default_factory=list)
     combo_window_s: float = Field(default=6.0, gt=0)  # ex. multi-kills regroupés
     killfeed: KillfeedSettings = Field(default_factory=KillfeedSettings)
