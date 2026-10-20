@@ -1,7 +1,24 @@
-# Profil OCR killfeed (sans templates PNG) : feed en haut à droite.
-# Labels suivis : kill, ace (à mapper vers multi_kill), clutch, win.
-# Mots-clés visés (EN/FR) : VICTORY, VICTOIRE, ROUND WIN.
+# Textes OCR = bannières de fin de round / de partie (le killfeed Valorant n'affiche que pseudos + icônes).
+# Libellés FR non vérifiés (recherche web sans résultat) : marqués « à confirmer ».
 id: valorant
 name: Valorant
-combo_window_s: 8.0
+genre: tactical_fps
+modes: [pvp]
+combo_window_s: 8.0   # un ace se joue sur un round entier : fenêtre large
 ui_templates: []
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    ace:
+      - ACE
+      - TEAM ACE
+      - ACE D'ÉQUIPE      # à confirmer
+    clutch:
+      - CLUTCH
+    flawless:
+      - FLAWLESS
+      - SANS FAUTE        # à confirmer
+    win:
+      - VICTORY
+      - VICTOIRE          # à confirmer

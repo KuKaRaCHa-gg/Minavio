@@ -1,0 +1,21 @@
+# Textes OCR : annonces de combat. L'OCR normalise « K.O. » en « k o ». FR à confirmer.
+id: street_fighter_6
+name: "Street Fighter 6"
+genre: fighting
+modes: [pvp, solo]
+combo_window_s: 5.0
+ui_templates: []
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    ko:
+      - K.O.
+      - DOUBLE K.O.
+    perfect:
+      - PERFECT
+      - PARFAIT          # à confirmer
+    perfect_parry:
+      - PERFECT PARRY    # à confirmer
+    win:
+      - WINS             # « <personnage> WINS » (confirmé par TCRF), localisé selon la langue : FR à confirmer

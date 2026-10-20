@@ -20,4 +20,4 @@ Aucun code à écrire : un jeu = un dossier + un YAML.
 5. Vérifier : `minavio games list` puis `minavio profiles validate`, et tester sur un clip
    avec `minavio run <profil> clip.mp4 --dry-run -v`.
 
-Jeux disponibles : `apex_legends`, `valorant`, `fortnite`, `warzone`.
+Jeux disponibles : voir `minavio games list` (ex. `apex_legends`, `valorant`, `fortnite`, `warzone`, `cs2`, `league_of_legends`, `rocket_league`, `street_fighter_6`, `arc_raiders`).

@@ -1,0 +1,20 @@
+# Textes OCR : annonces centrales. Tous les libellés sont à confirmer en jeu (pas de source web trouvée).
+id: rocket_league
+name: Rocket League
+genre: sports
+modes: [pvp]
+combo_window_s: 6.0
+ui_templates: []
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    goal:
+      - GOAL
+      - BUT              # à confirmer (version FR)
+    overtime:
+      - OVERTIME
+      - PROLONGATIONS    # à confirmer
+    win:
+      - VICTORY
+      - VICTOIRE         # à confirmer

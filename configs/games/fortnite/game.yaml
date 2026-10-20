@@ -1,6 +1,18 @@
-# Profil OCR messages d'élimination (sans templates PNG) : centre / bas.
-# Mots-clés visés (EN/FR) : Victory Royale, TOP 1, eliminated, éliminé.
+# Textes OCR : écran de victoire et fil d'actions (bas gauche). Libellés FR à confirmer en jeu.
+# « Victoire royale » : confirmé par les règles officielles FR d'Epic ; le reste est à confirmer.
 id: fortnite
 name: Fortnite
+genre: battle_royale
+modes: [pvp, coop]
 combo_window_s: 6.0
 ui_templates: []
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    win:
+      - VICTORY ROYALE
+      - VICTOIRE ROYALE
+    kill:
+      - ELIMINATED         # à confirmer (message d'élimination du fil d'actions)
+      - ÉLIMINÉ            # à confirmer

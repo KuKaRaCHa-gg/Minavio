@@ -1,0 +1,20 @@
+# Textes OCR : bannière de fin de round / de match (le killfeed CS2 n'affiche que pseudos + icônes).
+# Tous les libellés sont à confirmer en jeu (pas de source web trouvée).
+id: cs2
+name: "Counter-Strike 2"
+genre: tactical_fps
+modes: [pvp]
+combo_window_s: 8.0
+ui_templates: []
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    round_win:
+      - COUNTER-TERRORISTS WIN          # à confirmer
+      - TERRORISTS WIN                  # à confirmer
+      - LES ANTI-TERRORISTES GAGNENT    # à confirmer
+      - LES TERRORISTES GAGNENT         # à confirmer
+    win:
+      - VICTORY                         # à confirmer
+      - VICTOIRE                        # à confirmer
