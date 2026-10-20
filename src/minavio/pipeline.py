@@ -99,7 +99,8 @@ _API = {
 
 # Réparation déterministe des rendus : catégorie d'erreur -> options successives (healing.json).
 _RENDER_LADDER: dict[str, list[dict[str, Any]]] = {
-    "gpu": [{"video_codec": "libx264"}],
+    # Le seul usage GPU du rendu est RIFE (Vulkan) : repli CPU sur minterpolate puis sans ralenti.
+    "gpu": [{"slowmo_mode": "minterpolate"}, {"slowmo_mode": "none", "video_codec": "libx264"}],
     "encoder": [{"video_codec": "libx264"}],
     "oom": [
         {"slowmo_mode": "minterpolate", "threads": 2},
