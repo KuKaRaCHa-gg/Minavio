@@ -1,7 +1,7 @@
 """Orchestration du pipeline `minavio run`.
 
 Étapes : collect → detect → transcribe → rank → copy → music → beats → autocut → timeline →
-overlays → sfx → chapters → render → shorts.
+overlays → sfx → chapters → render → thumbnails → shorts.
 `autocut` n'existe que si `profile.editing.autocut.enabled` : elle tourne sur chaque source
 retenue (après `transcribe`, avant `timeline`) et ses plages conservées (`keep_spans`) sont passées
 à `plan_timeline`. En cas d'échec, un warning est émis et le montage se fait sans coupe de silences.
@@ -10,6 +10,11 @@ retenue (après `transcribe`, avant `timeline`) et ses plages conservées (`keep
 et que le LLM est actif (il appelle le LLM local). `shorts` produit, après les rendus principaux,
 une timeline dédiée par meilleur highlight (`profile.shorts.per_highlight`, ou `--shorts`) ; un
 short qui échoue donne un warning sans interrompre le job.
+
+`thumbnails` n'existe que si `profile.thumbnails.enabled` (et pas `--no-thumbnails`) : candidats
+(`work/<job>/thumbs/`) → choix (LLM visuel si activé, sinon heuristique) → un PNG par choix et par
+format dans `out/<profil>/<job>_thumb<i>_<format>.png`. Un échec donne un warning. La commande
+`minavio thumbnails` rejoue cette étape depuis un job existant (`build_thumbnails`).
 
 Chaque étape écrit son JSON dans `work/<job_id>/<étape>.json` ; avec `resume=True` une étape dont
 le JSON existe est relue au lieu d'être recalculée (`collect` est toujours rejouée : elle sert à
@@ -44,6 +49,8 @@ from minavio.core.models import (
     Moment,
     Overlay,
     SfxCue,
+    ThumbnailCandidate,
+    ThumbnailChoice,
     Timeline,
     TranscriptSegment,
 )
@@ -75,6 +82,9 @@ _API = {
     "build_caption_overlays": "minavio.motion.captions:build_caption_overlays",
     "render_overlays": "minavio.motion.render:render_overlays",
     "render_timeline": "minavio.core.render:render_timeline",
+    "extract_candidates": "minavio.core.thumbs:extract_candidates",
+    "pick_thumbnails": "minavio.llm.vision:pick_thumbnails",
+    "render_thumbnail": "minavio.motion.thumbnail:render_thumbnail",
 }
 
 
@@ -95,7 +105,7 @@ class JobResult:
     work_dir: Path
     timeline_path: Path | None = None
     outputs: list[Path] = field(default_factory=list)
-    # Fichiers annexes (chapitres YouTube) : affichés après les sorties vidéo.
+    # Fichiers annexes (chapitres YouTube, miniatures PNG) : affichés après les sorties vidéo.
     extras: list[Path] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     dry_run: bool = False
@@ -414,6 +424,7 @@ def run_job(
     out_dir: Path = Path("out"),
     shorts: int | None = None,
     chapters: bool = True,
+    thumbnails: bool = True,
 ) -> JobResult:
     from minavio.config import load_profile
 
@@ -585,6 +596,18 @@ def run_job(
         )
         result.outputs.append(Path(rendered))
 
+    if thumbnails and profile.thumbnails.enabled:
+        result.extras += build_thumbnails(
+            steps,
+            profile,
+            job_id,
+            highlights,
+            copy,
+            work=work,
+            target=target,
+            use_llm=llm_on,
+        )
+
     if n_shorts > 0 and short_fmt is not None:
         best = sorted(highlights, key=lambda h: h.score, reverse=True)[:n_shorts]
         s_profile = short_profile(profile)
@@ -620,6 +643,111 @@ def run_job(
                 log.warning(msg)
                 warnings.append(msg)
     return result
+
+
+def _kills_for(choice: ThumbnailChoice, highlights: list[Highlight]) -> int | None:
+    """Nombre de kills du moment de l'image principale (signals), s'il est connu."""
+    main = choice.images[0]
+    if "kills" in main.signals:
+        return max(1, round(main.signals["kills"]))
+    for h in highlights:
+        if h.source == main.source and h.start <= main.t <= h.end and "kills" in h.signals:
+            return max(1, round(h.signals["kills"]))
+    return None
+
+
+def _thumbs_llm(profile: ChannelProfile, use_llm: bool) -> Any:
+    """Client LLM pour le juge visuel ; None (heuristique) si désactivé ou indisponible."""
+    if not (use_llm and profile.thumbnails.use_vision_llm):
+        return None
+    try:
+        from minavio.llm.client import LocalLLM
+
+        return LocalLLM.from_settings(profile.llm)
+    except Exception as e:
+        log.warning("juge visuel indisponible (%s), choix heuristique", e)
+        return None
+
+
+def build_thumbnails(
+    steps: _Steps,
+    profile: ChannelProfile,
+    job_id: str,
+    highlights: list[Highlight],
+    copy: dict[str, Any] | None,
+    *,
+    work: Path,
+    target: Path,
+    use_llm: bool = True,
+    text: str | None = None,
+    layout: str | None = None,
+) -> list[Path]:
+    """Étape `thumbnails` : candidats -> choix -> un PNG par choix et par format.
+
+    Optionnelle (échec = warning). `text` impose le texte de toutes les miniatures ; `layout`
+    restreint les compositions. Écrit `work/<job>/thumbnails.json`.
+    """
+    if layout is not None:
+        profile = profile.model_copy(deep=True)
+        profile.thumbnails.layouts = [layout]  # type: ignore[list-item]
+    cfg = profile.thumbnails
+    target.mkdir(parents=True, exist_ok=True)
+
+    def compute() -> list[dict[str, Any]]:
+        cands: list[ThumbnailCandidate] = _api("extract_candidates")(
+            highlights, profile, work / "thumbs", cfg.candidates
+        )
+        if not cands:
+            raise MinavioError("aucune image candidate extraite des sources")
+        choices: list[ThumbnailChoice] = _api("pick_thumbnails")(
+            cands, profile, copy=copy, llm=_thumbs_llm(profile, use_llm)
+        )
+        if not choices:
+            raise MinavioError("aucune miniature retenue")
+        records: list[dict[str, Any]] = []
+        last_err: Exception | None = None
+        for i, choice in enumerate(choices, 1):
+            if text:
+                choice = choice.model_copy(update={"text": text})
+            kills = _kills_for(choice, highlights)
+            for fmt in cfg.formats:
+                out = target / f"{job_id}_thumb{i}_{fmt.name}.png"
+                try:
+                    rendered = _api("render_thumbnail")(
+                        choice,
+                        fmt,
+                        profile.motion.theme,
+                        out,
+                        badge=profile.display_name.upper(),
+                        kills=kills,
+                    )
+                except Exception as e:
+                    last_err = e
+                    msg = f"miniature {i} ({fmt.name}) ignorée : {e}"
+                    log.warning(msg)
+                    steps.warnings.append(msg)
+                    continue
+                records.append(
+                    {
+                        "index": i,
+                        "format": fmt.name,
+                        "layout": choice.layout,
+                        "text": choice.text,
+                        "file": str(rendered),
+                    }
+                )
+        if not records and last_err is not None:
+            raise MinavioError(f"aucune miniature rendue ({last_err})")
+        return records
+
+    def load(d: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        missing = [r["file"] for r in d if not Path(r["file"]).exists()]
+        if missing or not d:
+            raise MinavioError(f"fichier(s) absent(s) : {missing[:1]}")
+        return d
+
+    records = steps.run("thumbnails", compute, load=load, optional=True, default=[])
+    return [Path(r["file"]) for r in records]
 
 
 def _render_short(

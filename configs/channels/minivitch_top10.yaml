@@ -42,6 +42,11 @@ audio:
 llm:
   prompt: gaming
   max_highlights: 10
+  # EXEMPLE : local d'abord ; Claude n'intervient qu'en secours et seulement si une clé existe
+  # (ANTHROPIC_API_KEY ou `minavio llm set-key`). Payant, et envoie transcripts/images au cloud.
+  providers:
+    - { kind: local }
+    - { kind: anthropic, effort: low }
 
 motion:
   theme: { primary: "#FF3B30", accent: "#FFD60A", font: "Press Start 2P" }
@@ -68,3 +73,6 @@ chapters: true
 
 # Shorts : un par meilleur moment, en plus de la compilation (`minavio run --shorts N`).
 shorts: { per_highlight: 0, max_duration_s: 30, format: shorts }  # désactivés sur ce profil
+
+# Miniatures (out/<profil>/<job>_thumb<i>_<format>.png), `minavio thumbnails` pour les refaire.
+thumbnails: { enabled: true, count: 3, layouts: [hero, split, collage], max_words: 4 }
