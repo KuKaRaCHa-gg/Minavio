@@ -205,8 +205,9 @@ def remap_popups(
         # proche de la même source, à moins de POPUP_SNAP_S.
         best: tuple[float, float] | None = None  # (distance, temps timeline)
         tl = 0.0
-        for c in timeline.clips:
-            if c.source == source:
+        for i, c in enumerate(timeline.clips):
+            # Le cold open rejoue un extrait d'un moment : les popups vont dans le vrai moment.
+            if c.source == source and i >= timeline.cold_open_clips:
                 t_src = min(max(source_t, c.start), c.end - 1e-3)
                 dist = abs(t_src - source_t)
                 if dist <= POPUP_SNAP_S and (best is None or dist < best[0]):

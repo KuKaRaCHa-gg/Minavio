@@ -188,3 +188,16 @@ def test_remap_popups_snaps_out_of_autocut_gap():
     )
     assert pipeline.remap_popups([{"at": 3.0, "text": "K"}], hl, tl) == [(2.0, "K")]
     assert pipeline.remap_popups([{"at": 9.5, "text": "far"}], hl, tl) == [(7.5, "far")]
+
+
+def test_remap_popups_skips_cold_open():
+    a = Path("a.mp4")
+    hl = [Highlight(source=a, start=10, end=20, score=0.9, label="kill", detector="x")]
+    tl = Timeline(
+        profile_id="t",
+        fps=30,
+        cold_open_clips=1,
+        clips=[{"source": a, "start": 13, "end": 15.5}, {"source": a, "start": 10, "end": 20}],
+    )
+    # 13.5 s source existe dans le cold open (t=0.5) ET dans le vrai moment (t=2.5+3.5=6.0).
+    assert pipeline.remap_popups([{"at": 3.5, "text": "K"}], hl, tl) == [(6.0, "K")]
