@@ -73,6 +73,19 @@ class Clip(_TimeSpan):
     zoom: float = Field(default=1.0, ge=1.0, le=2.0)  # punch-in centré (masque les jump-cuts)
 
 
+class SfxCue(_Model):
+    """Effet sonore ponctuel ; `at` en secondes de la timeline rendue."""
+
+    at: float = Field(ge=0)
+    sound: str  # nom logique : "whoosh", "hit", "boom", "rewind"…
+    gain_db: float = Field(default=0, le=12)
+
+
+class Chapter(_Model):
+    start: float = Field(ge=0)  # secondes de la timeline rendue
+    title: str
+
+
 class Timeline(_Model):
     schema_version: str = SCHEMA_VERSION
     profile_id: str
@@ -82,6 +95,9 @@ class Timeline(_Model):
     music: Path | None = None
     beats: list[float] = Field(default_factory=list)  # temps de la timeline rendue
     captions: list[TranscriptSegment] = Field(default_factory=list)
+    sfx: list[SfxCue] = Field(default_factory=list)
+    # Index (dans `clips`) du premier clip « réel » : les clips avant sont un cold open.
+    cold_open_clips: int = Field(default=0, ge=0)
 
     @property
     def duration(self) -> float:

@@ -47,12 +47,25 @@ class VadSettings(_Model):
     min_speech_ms: int = Field(default=250, ge=0)
 
 
+class SfxSettings(_Model):
+    """Effets sonores locaux (CC0) posés automatiquement sur les événements du montage."""
+
+    enabled: bool = False
+    library_dir: str | None = None  # None = banque embarquée (minavio/core/assets/sfx)
+    gain_db: float = Field(default=-6, le=12)
+    on_cut: str | None = "whoosh"  # entre deux moments (pas aux coupes internes d'autocut)
+    on_kill: str | None = "hit"
+    on_multi_kill: str | None = "boom"
+    on_cold_open: str | None = "rewind"
+
+
 class AudioSettings(_Model):
     music_dir: str | None = None
     beat_sync: bool = True
     loudness_lufs: float = Field(default=-14, le=0)
     ducking: DuckingSettings = Field(default_factory=DuckingSettings)
     vad: VadSettings = Field(default_factory=VadSettings)
+    sfx: SfxSettings = Field(default_factory=SfxSettings)
 
 
 class DetectorRef(_Model):
@@ -96,8 +109,18 @@ class AutocutSettings(_Model):
     punch_in: float = Field(default=1.0, ge=1.0, le=1.3)  # zoom alterné aux jump-cuts
 
 
+class ColdOpenSettings(_Model):
+    """Ouvre la vidéo sur le pic du meilleur moment, puis effet rewind et montage normal."""
+
+    enabled: bool = False
+    duration_s: float = Field(default=2.5, gt=0.5, le=8)
+
+
 class EditingSettings(_Model):
     autocut: AutocutSettings = Field(default_factory=AutocutSettings)
+    cold_open: ColdOpenSettings = Field(default_factory=ColdOpenSettings)
+    # chronological = ordre des sources ; countdown = du moins bon au meilleur (Top N).
+    order: Literal["chronological", "countdown"] = "chronological"
     pacing: Pacing = "dynamic"
     target_duration_s: float = Field(gt=0)
     min_clip_s: float = Field(default=1.5, gt=0)
@@ -135,6 +158,14 @@ class FramingSettings(_Model):
     facecam: FacecamSettings = Field(default_factory=FacecamSettings)
 
 
+class ShortsSettings(_Model):
+    """Shorts supplémentaires : un par meilleur moment, en plus de la compilation."""
+
+    per_highlight: int = Field(default=0, ge=0, le=10)
+    max_duration_s: float = Field(default=30, gt=5, le=60)
+    format: str = "shorts"  # nom d'un `outputs[]` 9:16 du profil
+
+
 class ChannelProfile(_Model):
     id: str
     display_name: str
@@ -148,6 +179,8 @@ class ChannelProfile(_Model):
     motion: MotionSettings = Field(default_factory=MotionSettings)
     editing: EditingSettings
     framing: FramingSettings = Field(default_factory=FramingSettings)
+    shorts: ShortsSettings = Field(default_factory=ShortsSettings)
+    chapters: bool = False  # chapitres YouTube dans out/<profil>/<job>_chapters.txt
 
 
 class UiTemplate(_Model):
