@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from typer.core import TyperGroup
 
 from minavio.config import list_games, list_profiles, load_game, load_profile
 from minavio.config.schema import ChannelProfile
@@ -23,6 +24,23 @@ llm = typer.Typer(no_args_is_help=True, help="Serveur LLM local.")
 app.add_typer(llm, name="llm")
 games = typer.Typer(no_args_is_help=True, help="Jeux (templates de détection).")
 app.add_typer(games, name="games")
+
+
+class _PublishGroup(TyperGroup):
+    """`minavio publish auth` reste une sous-commande ; `minavio publish <profil> <job>` publie."""
+
+    def resolve_command(self, ctx, args):
+        if args and args[0] not in self.commands and not args[0].startswith("-"):
+            args = ["send", *args]
+        return super().resolve_command(ctx, args)
+
+
+publish = typer.Typer(
+    cls=_PublishGroup,
+    no_args_is_help=True,
+    help="Publication YouTube : `publish auth`, puis `publish <profil> <job_id>`.",
+)
+app.add_typer(publish, name="publish")
 
 Verbose = Annotated[bool, typer.Option("--verbose", "-v", help="Logs DEBUG et traceback.")]
 
@@ -302,3 +320,91 @@ def ui(
         )
         raise typer.Exit(1) from e
     launch(port=port, open_browser=not no_browser, out_dir=out)
+
+
+@publish.command("auth")
+def publish_auth(
+    client_secret: Annotated[
+        Path | None,
+        typer.Option("--client-secret", help="client_secret.json téléchargé depuis Google Cloud."),
+    ] = None,
+    status: Annotated[
+        bool, typer.Option("--status", help="Affiche l'état sans rien lancer.")
+    ] = False,
+    logout: Annotated[bool, typer.Option("--logout", help="Supprime le jeton local.")] = False,
+    verbose: Verbose = False,
+) -> None:
+    """Connecte YouTube (OAuth local, navigateur) : copie le client_secret.json puis autorise."""
+    _setup_logging(verbose)
+    from minavio.publish import auth
+
+    if status:
+        typer.echo(f"YouTube : {auth.status_text()}")
+        typer.echo(f"Dossier de config : {auth.config_dir()}")
+        return
+    if logout:
+        typer.echo("Jeton supprimé." if auth.forget() else "Aucun jeton à supprimer.")
+        return
+    try:
+        typer.echo("Ouverture du navigateur pour autoriser Minavio à publier sur ta chaîne…")
+        auth.authenticate(client_secret)
+    except MinavioError as e:
+        raise _fail(e, verbose) from e
+    typer.secho(f"YouTube connecté (jeton : {auth.token_path()}).", fg="green")
+
+
+@publish.command("send")
+def publish_send(
+    profile_id: Annotated[str, typer.Argument(metavar="PROFILE", help="Id du profil de chaîne.")],
+    job_id: Annotated[str, typer.Argument(help="Job rendu (dossier work/<job_id>).")],
+    video: Annotated[
+        str, typer.Option("--video", help="youtube, shorts, short<N> ou all.")
+    ] = "youtube",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Affiche ce qui serait envoyé, sans réseau.")
+    ] = False,
+    privacy: Annotated[
+        str | None, typer.Option("--privacy", help="private, unlisted ou public (sinon le profil).")
+    ] = None,
+    at: Annotated[
+        str | None,
+        typer.Option("--at", help="Heure locale HH:MM de mise en ligne ; 'now' = immédiat."),
+    ] = None,
+    work: Annotated[Path, typer.Option("--work", help="Dossier work/.")] = Path("work"),
+    out: Annotated[Path, typer.Option("--out", help="Dossier de sortie.")] = Path("out"),
+    verbose: Verbose = False,
+) -> None:
+    """Publie un job sur YouTube (jamais automatique). Une vidéo déjà publiée est ignorée."""
+    _setup_logging(verbose)
+    from minavio.publish.youtube import publish_job
+
+    try:
+        profile = load_profile(profile_id)
+        results = publish_job(
+            profile,
+            job_id,
+            video=video,
+            dry_run=dry_run,
+            work_root=work,
+            out_dir=out,
+            privacy=privacy,
+            schedule_at=at,
+        )
+    except MinavioError as e:
+        raise _fail(e, verbose) from e
+    for r in results:
+        when = r["publish_at"] or "immédiat"
+        if r["status"] == "dry_run":
+            typer.secho(f"[dry-run] {r['key']} : {r['file']}", fg="cyan")
+            typer.echo(f"  titre           : {r['title']}")
+            typer.echo(f"  confidentialité : {r['privacy']} (mise en ligne : {when})")
+            typer.echo(f"  tags            : {', '.join(r['tags'])}")
+            typer.echo(f"  miniature       : {r['thumbnail'] or 'aucune'}")
+            typer.echo("  description     :")
+            typer.echo("    " + r["description"].replace("\n", "\n    "))
+        elif r["status"] == "already_published":
+            typer.echo(f"{r['key']} : déjà publiée, ignorée ({r.get('url')})")
+        else:
+            typer.secho(f"{r['key']} : publiée -> {r['url']} (mise en ligne : {when})", fg="green")
+        for w in r.get("warnings", []):
+            typer.secho(f"Avertissement : {w}", fg="yellow", err=True)

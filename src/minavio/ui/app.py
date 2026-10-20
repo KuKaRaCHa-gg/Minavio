@@ -1,7 +1,8 @@
 """Interface graphique locale (Gradio) : `minavio ui`.
 
-Cinq onglets : Montage, Miniatures, Captures de jeu, Réglages, Système. Toute la logique est dans
-`minavio.ui.services` ; ce module ne fait que la mise en page et le câblage des événements.
+Six onglets : Montage, Miniatures, Captures de jeu, Réglages, Publication, Système. La logique est
+dans `minavio.ui.services` et `minavio.ui.publish_services` ; ce module ne fait que la mise en page
+et le câblage des événements.
 Le serveur n'écoute que sur 127.0.0.1 : rien n'est exposé sur le réseau.
 """
 
@@ -12,6 +13,7 @@ from pathlib import Path
 import gradio as gr
 
 from minavio.errors import MinavioError
+from minavio.ui import publish_services as psvc
 from minavio.ui import services as svc
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -312,6 +314,119 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
             reload_btn.click(on_cfg_load, cfg_profile, [cfg_text, cfg_msg])
             check_btn.click(on_check, [cfg_text, cfg_profile], cfg_msg)
             save_btn.click(svc.save_profile_yaml, [cfg_text, cfg_profile], cfg_msg)
+
+        # ------------------------------------------------------------------ Publication
+        with gr.Tab("📤 Publication"):
+            gr.Markdown(psvc.PUBLISH_WARNING)
+            auth_md = gr.Markdown()
+            with gr.Row():
+                secret_file = gr.File(
+                    label="client_secret.json (Google Cloud, une seule fois)",
+                    file_types=[".json"],
+                    type="filepath",
+                )
+                connect_btn = gr.Button("🔗 Connecter YouTube")
+            with gr.Row():
+                pb_profile = gr.Dropdown(profiles, value=first, label="Profil")
+                pb_job = gr.Dropdown(
+                    svc.job_choices(cwd / "work"), label="Job récent (work/, date de modification)"
+                )
+                pb_refresh = gr.Button("↻ Actualiser")
+            with gr.Row():
+                pb_video = gr.Dropdown(psvc.PUBLISH_VIDEOS, value="youtube", label="Vidéo")
+                pb_privacy = gr.Dropdown(
+                    ["private", "unlisted", "public"], value="private", label="Confidentialité"
+                )
+                pb_at = gr.Textbox(
+                    label="Heure de mise en ligne (HH:MM locale)",
+                    placeholder="vide = immédiat",
+                    info="Programmer impose « privée » jusqu'à l'heure dite.",
+                )
+            pb_out = gr.Textbox(value=str(default_out), label="Dossier de sortie")
+            pb_title = gr.Textbox(label="Titre (éditable)")
+            pb_desc = gr.Textbox(label="Description + chapitres (éditable)", lines=8)
+            pb_tags = gr.Textbox(label="Tags (séparés par des virgules)")
+            pb_thumb = gr.Image(label="Miniature", interactive=False, height=200)
+            with gr.Row():
+                pb_preview_btn = gr.Button("🔍 Prévisualiser (dry-run)")
+                pb_confirm = gr.Checkbox(label="Je confirme la publication sur YouTube")
+                pb_publish_btn = gr.Button("📤 Publier", variant="primary")
+            pb_msg = gr.Markdown()
+
+            def on_pb_load(pid):
+                s = psvc.profile_publish_settings(pid) if pid else {"privacy": "private"}
+                return s["privacy"], s.get("schedule_at", "")
+
+            def on_pb_refresh():
+                return gr.Dropdown(choices=svc.job_choices(cwd / "work"))
+
+            def on_pb_choices(pid, job, out):
+                return gr.Dropdown(choices=psvc.video_choices(pid, job or "", out), value="youtube")
+
+            def on_pb_preview(pid, job, video, privacy, at, out, title, desc, tags):
+                try:
+                    res = psvc.preview(
+                        pid,
+                        job,
+                        video,
+                        work_dir=cwd / "work",
+                        out_dir=out,
+                        privacy=privacy,
+                        schedule_at=at or "now",
+                        title=title,
+                        description=desc,
+                        tags=tags,
+                    )
+                except MinavioError as e:
+                    return f"❌ {e}", gr.skip(), gr.skip(), gr.skip(), gr.skip()
+                r = res[0]
+                return (
+                    "🔍 Prévisualisation (rien n'a été envoyé).\n\n" + psvc.results_markdown(res),
+                    r["title"],
+                    r["description"],
+                    ", ".join(r["tags"]),
+                    r["thumbnail"],
+                )
+
+            def on_pb_publish(pid, job, video, privacy, at, out, title, desc, tags, confirm):
+                return psvc.run_publish(
+                    pid,
+                    job,
+                    video,
+                    work_dir=cwd / "work",
+                    out_dir=out,
+                    privacy=privacy,
+                    schedule_at=at or "now",
+                    title=title,
+                    description=desc,
+                    tags=tags,
+                    dry_run=False,
+                    confirm=confirm,
+                )
+
+            pb_inputs = [pb_profile, pb_job, pb_video, pb_privacy, pb_at, pb_out]
+            pb_fields = [pb_title, pb_desc, pb_tags]
+            pb_profile.change(on_pb_load, pb_profile, [pb_privacy, pb_at])
+            demo.load(on_pb_load, pb_profile, [pb_privacy, pb_at])
+            demo.load(on_pb_refresh, None, pb_job)
+            demo.load(psvc.auth_markdown, None, auth_md)
+            pb_refresh.click(on_pb_refresh, None, pb_job)
+            pb_job.change(on_pb_choices, [pb_profile, pb_job, pb_out], pb_video)
+
+            def on_pb_clear():  # textes d'un autre job : jamais envoyés par erreur
+                return "", "", "", None
+
+            for trigger in (pb_job, pb_profile, pb_video):
+                trigger.change(on_pb_clear, None, [pb_title, pb_desc, pb_tags, pb_thumb])
+            connect_btn.click(psvc.connect_youtube, secret_file, auth_md)
+            pb_preview_btn.click(
+                on_pb_preview,
+                [*pb_inputs, *pb_fields],
+                [pb_msg, pb_title, pb_desc, pb_tags, pb_thumb],
+            )
+            pb_publish_btn.click(on_pb_publish, [*pb_inputs, *pb_fields, pb_confirm], pb_msg).then(
+                lambda: False, None, pb_confirm
+            )
 
         # ------------------------------------------------------------------ Système
         with gr.Tab("🩺 Système"):

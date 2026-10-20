@@ -24,7 +24,10 @@ outputs:
   - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 60, reframe: action_track, max_duration_s: 59 }
 
 detection:
-  - { name: template_match, weight: 1.0 }        # kills / knocks / win depuis games/*
+  - { name: killfeed_ocr, weight: 1.0 }          # lit le killfeed (OCR) : aucune capture requise
+  - { name: motion_intensity, weight: 0.6 }      # fusillades / mouvement soutenu
+  - { name: vision_scan, weight: 0.8, params: { mode: candidates } }  # le LLM vision juge les candidats
+  - { name: template_match, weight: 0.5 }        # optionnel : ignoré sans PNG dans games/*
   - { name: audio_peak, weight: 0.6, params: { min_db_above_median: 12 } }
   - { name: speech, weight: 0.4 }                # réactions vocales (cris, rires)
   - { name: hype, weight: 0.8 }                  # pics d'intensité combinés
@@ -36,6 +39,8 @@ audio:
   loudness_lufs: -14
   ducking: { enabled: true, music_gain_db: -16 }
   sfx: { enabled: true }                         # whoosh / hit / boom / rewind (CC0, locaux)
+  # Retire la musique du jeu (Content ID) : garde voix + effets (Demucs, extra audio).
+  separation: { enabled: true, remove_music: true }
 
 llm:
   prompt: gaming
@@ -59,6 +64,7 @@ editing:
   pre_roll_s: 3.0     # contexte avant le clutch
   post_roll_s: 1.5
   cold_open: { enabled: true, duration_s: 2.5 }  # ouverture sur le meilleur pic, puis rewind
+  slowmo: { enabled: true, factor: 0.5, duration_s: 1.2 }  # ralenti sur l'instant du kill
   # Le jeu fait du bruit (coups, musique, voix) : coupe légère, seuil d'énergie relevé.
   autocut: { enabled: true, min_silence_s: 1.2, energy_margin_db: 4, punch_in: 1.0 }
 
@@ -73,3 +79,6 @@ shorts: { per_highlight: 3, max_duration_s: 30, format: shorts }
 
 # Miniatures (out/<profil>/<job>_thumb<i>_<format>.png), `minavio thumbnails` pour les refaire.
 thumbnails: { enabled: true, count: 3, layouts: [hero, split, collage], max_words: 4 }
+
+# Publication YouTube : jamais automatique (`minavio publish <profil> <job>` ou onglet Publication).
+publish: { privacy: private, category_id: "20", schedule_at: "18:00" }

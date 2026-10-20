@@ -94,6 +94,65 @@ Pour les fichiers `.txt`, une ligne par message au format `[H:MM:SS] user: messa
 
 Exemple : pour `/videos/vod_2026-10-01.mp4`, le log est `/videos/vod_2026-10-01.chat.json`.
 
+### Détecteurs autonomes (aucune capture PNG requise)
+
+| Détecteur | Détecte | Params |
+| :--- | :--- | :--- |
+| `killfeed_ocr` | kills / knocks / victoires lus par OCR dans le killfeed | `roi`, `keywords`, `player_names` (bloc `KillfeedSettings`, voir `minavio schema`) |
+| `motion_intensity` | fusillades, mouvements soutenus (intensité de mouvement vidéo) | aucun |
+| `vision_scan` | images candidates jugées par le LLM vision (local d'abord) | `mode: candidates` |
+
+`template_match` devient un bonus optionnel (poids 0,5 dans `minivitch`) : sans PNG dans
+`games/<id>/`, il est ignoré et le profil reste valable.
+
+## `editing.slowmo` : ralenti
+
+Ralentit l'instant décisif (kill) avec interpolation d'images. Désactivé par défaut.
+
+| Clé | Rôle |
+| :--- | :--- |
+| `enabled` | active le ralenti |
+| `factor` | vitesse pendant le ralenti (`0.1 < factor < 1`, ex. `0.5`) |
+| `duration_s` | durée SOURCE ralentie, centrée sur le pic (`0.2` à `5`) |
+| `labels` | labels de highlights concernés (défaut `kill`, `multi_kill`, `clutch`) |
+| `interpolation` | `auto`, `rife`, `minterpolate` ou `none` |
+
+## `audio.separation` et `audio.denoise` : audio propre
+
+L'étape `audio_clean` (après `collect`, avant `detect`) n'existe que si l'un des deux est activé.
+Elle écrit `work/<job_id>/audio_tracks.json` (`{source: piste propre}`) qui sert au rendu de la
+compilation et des shorts. Un échec donne un warning ; le rendu garde l'audio d'origine.
+
+| Clé | Rôle |
+| :--- | :--- |
+| `separation.enabled` | sépare voix / musique / reste (Demucs) |
+| `separation.model` | modèle Demucs (défaut `htdemucs`) |
+| `separation.remove_music` | retire la musique du jeu (risque **Content ID**), garde voix et effets |
+| `denoise.enabled` | débruite la voix (ventilo, clavier) |
+| `denoise.backend` | `auto` (DeepFilterNet sinon arnndn), `deepfilternet` ou `arnndn` |
+
+`minivitch` / `minivitch_top10` : séparation avec `remove_music: true`. `bytetricks` : débruitage.
+
+## `publish` : publication YouTube
+
+Rien n'est publié par `minavio run` : seulement `minavio publish <profil> <job_id>` ou l'onglet
+Publication de l'interface. Mise en place du client OAuth Google, quotas et sécurité :
+[`README.md`](../README.md#publication-youtube).
+
+| Clé | Rôle |
+| :--- | :--- |
+| `privacy` | `private` (défaut), `unlisted` ou `public` ; `--privacy` la surcharge |
+| `schedule_at` | heure locale `HH:MM` (prochaine occurrence) -> `status.publishAt` en UTC ; impose `private` jusqu'à l'heure dite ; `--at now` publie tout de suite |
+| `category_id` | `20` Gaming, `28` Science & Technology, `24` Entertainment |
+| `made_for_kids` | déclaration « made for kids » (défaut `false`) |
+| `playlist_id` | playlist où ajouter chaque vidéo |
+| `shorts` | `--video all` inclut aussi les Shorts |
+| `extra_tags` | tags ajoutés à ceux du LLM |
+| `language` | langue par défaut de la vidéo (`fr`) |
+
+Le bloc n'a pas besoin de `enabled` : la publication est toujours un geste explicite. Le journal
+`work/<job_id>/publish.json` empêche tout doublon.
+
 ## `audio.sfx` : effets sonores
 
 Désactivé par défaut. Avec `enabled: true`, l'étape `sfx` (après `overlays`) pose des effets
@@ -220,9 +279,10 @@ Pour refaire des miniatures d'un job existant :
 
 | Profil | Particularités |
 | :--- | :--- |
-| `minivitch` | sfx, cold open 2,5 s, chapitres, 3 shorts par moment, `kill_counter` et `rewind`, miniatures, exemple `llm.providers` (local puis Claude) |
+| `minivitch` | détection autonome (`killfeed_ocr`, `motion_intensity`, `vision_scan`), ralenti, séparation audio, publication privée à 18:00 (catégorie 20), sfx, cold open 2,5 s, chapitres, 3 shorts par moment, `kill_counter` et `rewind`, miniatures, exemple `llm.providers` (local puis Claude) |
 | `minivitch_top10` | « Minivitch — Top 10 » : copie de minivitch en `order: countdown`, `max_highlights: 10`, `rank_card`, durée cible 420 s, shorts désactivés |
-| `bytetricks`, `thelostchat` | sfx désactivé, pas de chapitres ni de shorts ; miniatures activées (hero+split / hero+collage) |
+| `bytetricks` | `vision_scan` (0,5), débruitage voix, publication catégorie 28 ; sfx désactivé, pas de chapitres ni de shorts ; miniatures hero+split |
+| `thelostchat` | `vision_scan` (0,7), `motion_intensity` (0,4), publication catégorie 24 ; sfx désactivé, pas de chapitres ni de shorts ; miniatures hero+collage |
 
 ## Environnement
 

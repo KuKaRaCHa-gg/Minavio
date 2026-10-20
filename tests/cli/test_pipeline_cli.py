@@ -26,6 +26,8 @@ class Fakes:
         self.keep_spans = [(1.0, 4.0)]  # plages renvoyées par analyze_keep_spans
         self.autocut_inputs: list[tuple[Path, object, list | None]] = []
         self.plan_kwargs: dict = {}
+        self.audio_calls: list[list[Path]] = []
+        self.rendered: list = []  # timelines passées à render_timeline
 
     def _rec(self, name):
         self.calls.append(name)
@@ -81,6 +83,17 @@ class Fakes:
                 captions=transcript or [],
             )
 
+        def audio_tracks(sources, profile, work_dir):
+            self.audio_calls.append(list(sources))
+            if "audio_clean" in self.fail:
+                raise RuntimeError("demucs absent")
+            out = {}
+            for s in sources:
+                clean = Path(work_dir) / f"{s.stem}.clean.wav"
+                clean.write_bytes(b"wav")
+                out[s] = clean
+            return out
+
         def caps(captions, style):
             self._rec("captions")
             return []
@@ -102,6 +115,7 @@ class Fakes:
 
         def render(timeline, fmt, out, profile, overlay_files=None):
             self._rec(f"render:{fmt.name}")
+            self.rendered.append(timeline)
             out.write_bytes(b"x")
             return out
 
@@ -110,6 +124,7 @@ class Fakes:
             "run_detectors": detect,
             "transcribe": transcribe,
             "analyze_keep_spans": autocut,
+            "prepare_audio_tracks": audio_tracks,
             "detect_beats": beats,
             "rank_highlights": rank,
             "generate_copy": copy,
