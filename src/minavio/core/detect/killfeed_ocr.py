@@ -342,6 +342,7 @@ def _frames(
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err)
         except FileNotFoundError as e:
             raise FFmpegError("'ffmpeg' est introuvable : installez FFmpeg.") from e
+        stopped = False  # arrêt volontaire du lecteur : ffmpeg peut alors sortir sur EPIPE
         try:
             k = 0
             while True:
@@ -350,12 +351,15 @@ def _frames(
                     break
                 yield k / fps, np.frombuffer(buf, np.uint8).reshape(oh, ow, 3)
                 k += 1
+        except GeneratorExit:
+            stopped = True
+            raise
         finally:
             proc.stdout.close()  # type: ignore[union-attr]
             if proc.poll() is None:
                 proc.kill()
             code = proc.wait()
-        if code not in (0, -9):
+        if code not in (0, -9) and not stopped:
             err.seek(0)
             msg = err.read().decode("utf-8", errors="replace").strip()[-1500:]
             raise FFmpegError(f"Lecture des frames échouée ({src}) : {' '.join(cmd)}\n{msg}")
