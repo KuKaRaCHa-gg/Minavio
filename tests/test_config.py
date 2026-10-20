@@ -113,4 +113,4 @@ def test_every_game_profile_loads():
     for game_id in games:
         g = load_game(game_id)
         assert g.id == game_id
-        assert g.genre != "other" or game_id == "example", f"{game_id} : genre manquant"
+        assert g.genre != "other", f"{game_id} : genre manquant (configs/games/{game_id}/game.yaml)"
