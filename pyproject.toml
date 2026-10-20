@@ -14,11 +14,12 @@ dependencies = [
 [project.optional-dependencies]
 vision = ["opencv-python-headless>=4.9", "mediapipe>=0.10", "scenedetect>=0.7"]
 audio = ["librosa>=0.10", "silero-vad>=5.1", "onnxruntime>=1.18"]
+cleanaudio = ["demucs>=4", "deepfilternet>=0.5"]
 asr = ["faster-whisper>=1.0"]
 hype = ["panns-inference>=0.1", "torch>=2.3"]
 ui = ["gradio>=6,<7"]
 cloud = ["anthropic>=1"]
-all = ["minavio[vision,audio,asr,hype,ui,cloud]"]
+all = ["minavio[vision,audio,cleanaudio,asr,hype,ui,cloud]"]
 
 [project.scripts]
 minavio = "minavio.cli:app"
