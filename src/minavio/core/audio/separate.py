@@ -50,7 +50,16 @@ def run_demucs(wav: Path, out_dir: Path, model: str) -> dict[str, Path]:
     proc = subprocess.run(cmd, capture_output=True, check=False)
     if proc.returncode != 0:
         err = proc.stderr.decode("utf-8", errors="replace").strip()[-_STDERR_LIMIT:]
-        raise MinavioError(f"Demucs a échoué (code {proc.returncode}) : {' '.join(cmd)}\n{err}")
+        hint = ""
+        if "URLError" in err or "urlopen" in err:
+            hint = (
+                "\nDemucs télécharge ses poids au premier usage (~80 Mo, dl.fbaipublicfiles.com) : "
+                f"vérifie la connexion, ou lance une fois `python -m demucs.separate -n {model} "
+                "<fichier.wav>` pour les mettre en cache."
+            )
+        raise MinavioError(
+            f"Demucs a échoué (code {proc.returncode}) : {' '.join(cmd)}\n{err}{hint}"
+        )
     stem_dir = out_dir / model / wav.stem
     stems = {s: stem_dir / f"{s}.wav" for s in STEMS}
     missing = [s for s, p in stems.items() if not p.exists()]

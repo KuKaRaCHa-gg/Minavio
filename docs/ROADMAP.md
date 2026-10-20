@@ -141,3 +141,24 @@ Kenney (CC0, prévu ; banque embarquée procédurale CC0 faute d'accès réseau,
 - Contrat : `Clip.moment` / `Clip.peak_t`, `Timeline.moments()` par identifiant, `SfxCue`, `Chapter`.
 - Revue `orchestrator` : 7 points, tous corrigés (moments, popups dans le cold open, SFX au kill,
   rewind synchronisé, peak_t fusionné, 2e hit, scenedetect ≥ 0.7).
+
+## État — miniatures, multi-LLM, base de connaissances et lot 5 livrés (sur `main`)
+
+- Miniatures (`thumbnails`), chaîne LLM multi-fournisseurs (local par défaut ; Claude, Gemini,
+  GitHub Models, OpenAI-compatible en option, clés hors dépôt), interface Gradio.
+- Base de connaissances locale (BM25, ~85 fiches) injectée dans rank/copy/chapitres/miniatures/vision ;
+  fiches par **genre** (battle royale, tactique, souls-like, horreur, coop PvE, roguelike, sandbox,
+  MOBA, combat, sport/course, extraction) filtrées par `GameProfile.genre` / `modes`.
+- Détection autonome : `killfeed_ocr` (RapidOCR, Apache-2.0, ROI trouvée seule), `motion_intensity`
+  (flux optique, secousses, flashs), `vision_scan` (VLM local, cloud seulement si `allow_cloud` +
+  `vision_model`).
+- Audio : `audio_clean` (Demucs pour retirer la musique du jeu, DeepFilterNet / arnndn), rejoué à
+  chaque run (cache par source et réglages).
+- Ralenti au kill (`editing.slowmo`) : rife-ncnn-vulkan (MIT) ou `minterpolate`.
+- Publication YouTube manuelle (`minavio publish`, onglet 📤), idempotente ; une vidéo programmée
+  est forcément `public` à l'heure dite.
+- Revue `orchestrator` du lot 5 : 9 points, 8 corrigés (`--no-llm` et vision_scan, Shorts vs
+  compilation 9:16, programmation/confidentialité, reframe en mode RIFE, reprise d'audio_clean,
+  cache vision_scan, ROI validées, arrêt anticipé ffmpeg) ; le 9e est informatif (poids Demucs
+  téléchargés au premier usage, message d'erreur explicite).
+- Profils de jeux supplémentaires (PvP, PvE, solo, coop) : PR Copilot en cours.
