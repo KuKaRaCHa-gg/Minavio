@@ -74,7 +74,7 @@ class DetectorRef(_Model):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
-ProviderKind = Literal["local", "anthropic", "google", "openai_compat"]
+ProviderKind = Literal["local", "anthropic", "google", "github", "openai_compat"]
 
 
 class LlmProvider(_Model):
@@ -85,7 +85,8 @@ class LlmProvider(_Model):
     model: str | None = None  # None = défaut du fournisseur (cf. minavio.llm.providers)
     vision_model: str | None = None  # modèle pour les images (miniatures) ; None = défaut / aucun
     base_url: str | None = None  # None = défaut du fournisseur ; obligatoire pour openai_compat
-    api_key_env: str | None = None  # None = ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY
+    # None = ANTHROPIC_API_KEY / GEMINI_API_KEY / GITHUB_TOKEN (GitHub Models) / OPENAI_API_KEY
+    api_key_env: str | None = None
     effort: Literal["low", "medium", "high"] | None = None  # anthropic : effort de raisonnement
 
     @model_validator(mode="after")
