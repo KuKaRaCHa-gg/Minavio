@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 from minavio import pipeline
 from minavio.cli import app
 from minavio.core.models import Clip, Highlight, Timeline, TranscriptSegment
-from minavio.errors import LLMUnavailableError, MinavioError
+from minavio.errors import FFmpegError, LLMUnavailableError, MinavioError
 
 runner = CliRunner()
 
@@ -136,6 +136,7 @@ class Fakes:
             "build_caption_overlays": caps,
             "render_overlays": ov,
             "render_timeline": render,
+            "probe_source": lambda path: None,
         }
 
 
@@ -397,3 +398,26 @@ def test_autocut_resume_reads_json(env):
     assert "autocut" not in fakes.calls
     assert "plan" in fakes.calls
     assert fakes.plan_kwargs["keep_spans"] == {fakes.src: [(1.0, 4.0)]}
+
+
+def test_render_unknown_encoder_healed_with_warning(env, monkeypatch):
+    fakes, _ = env
+    table = fakes.table()
+    real_render = table["render_timeline"]
+    seen: list[dict] = []
+
+    def flaky(timeline, fmt, out, profile, overlay_files=None, **overrides):
+        seen.append(dict(overrides))
+        if not overrides:
+            raise FFmpegError(
+                "Commande échouée (code 1) : ffmpeg -c:v h264_nvenc\nUnknown encoder 'h264_nvenc'"
+            )
+        return real_render(timeline, fmt, out, profile, overlay_files=overlay_files)
+
+    table["render_timeline"] = flaky
+    monkeypatch.setattr(pipeline, "_api", lambda name: table[name])
+    res = job(env)
+    assert {"video_codec": "libx264"} in seen
+    assert any("video_codec=libx264" in w for w in res.warnings)
+    log = json.loads((res.work_dir / "healing.json").read_text(encoding="utf-8"))
+    assert log[0]["category"] == "encoder"
