@@ -320,7 +320,8 @@ def test_prompt_sections_exist(name):
 
 
 def test_prompt_themes():
-    assert "CHAMPION" in load_prompt("gaming", "vision_scan")
+    gaming = load_prompt("gaming", "vision_scan")
+    assert "boss_kill" in gaming and "Apex" not in gaming  # neutre, PvE inclus
     assert "waouh" in load_prompt("tech_facts", "vision_scan")
     assert "faciale" in load_prompt("stream_bestof", "vision_scan")
 

@@ -156,3 +156,28 @@ Limites connues :
 - Templates PNG d'Apex Legends à fournir (`configs/games/apex_legends/templates/`) : sans eux,
   `template_match` est ignoré avec un warning et la détection repose sur l'audio et la voix.
 - `loudnorm` en une passe ; `action_track` = centroïde de mouvement OpenCV.
+
+## 11. Base de connaissances et genres de jeux
+
+`src/minavio/llm/kb.py` indexe des fiches Markdown (`src/minavio/llm/knowledge/`, plus les fiches
+utilisateur de `configs/knowledge/`) et injecte les passages pertinents dans les prompts de `rank`,
+`copy`, `chapters`, `thumbnails` et `vision_scan`. Le prompt `gaming.md` reste neutre : ce qui fait
+un bon moment dépend du **genre** du jeu, pas de la chaîne.
+
+- `GameProfile.genre` (battle_royale, tactical_fps, soulslike, horror, coop_pve, ...) et
+  `GameProfile.modes` (pvp, pve, solo, coop) sont lus dans `configs/games/<id>/game.yaml`
+  (`minavio.config.load_game`, résultat mis en cache, jamais bloquant : un jeu absent ou invalide
+  est ignoré).
+- Une fiche déclare `genre=a,b` et/ou `mode=pve` dans sa directive `<!-- kb: ... -->` : elle
+  s'applique si au moins un jeu du profil a l'un de ces genres (et l'un de ces modes). Sans `genre`,
+  une fiche `content_type=gaming` reste générique.
+- Fiches par genre : `knowledge/genres/*.md` (soulslike, horror, coop_pve, action_adventure,
+  roguelike, sandbox, moba, fighting, sports, extraction_shooter, tactical_fps) ; chacune décrit les
+  moments forts, les signaux d'interface et audio, et les faux positifs.
+  `games/fps_battle_royale.md` ne vise que battle_royale, tactical_fps, arena_shooter et
+  extraction_shooter (plus de killfeed injecté pour un jeu PvE ou solo).
+- Les requêtes de recherche sont complétées par `kb.genre_query(profile)` (mots-clés du genre et des
+  modes). `vision_scan` accepte les événements PvE/solo (boss_kill, death, near_death, jumpscare,
+  victory, goal, overtake, combo, discovery, build_reveal) en plus de kill/clutch/chaos.
+- Ajouter un genre : une fiche `genres/<genre>.md` avec sa directive, et ses mots-clés dans
+  `kb.GENRE_TERMS`. `MINAVIO_KB=0` désactive toute l'injection.
