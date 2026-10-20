@@ -227,14 +227,26 @@ def _load_disk(path: Path) -> dict[str, Any]:
 # ---------------------------------------------------------------- scan
 
 
-def _messages(profile: ChannelProfile, t: float) -> list[dict[str, str]]:
+def _system(profile: ChannelProfile, llm: LLMChain) -> str:
+    """Prompt système + fiches de connaissances (jeux de la chaîne : quoi repérer à l'image)."""
+    from minavio.llm.kb import query_from, with_knowledge
+
+    query = query_from(
+        profile.display_name, *profile.games, "killfeed kill knock clutch squad wipe finish"
+    )
+    return with_knowledge(
+        load_prompt(profile.llm.prompt, "vision_scan"), profile, "vision_scan", query, llm
+    )
+
+
+def _messages(profile: ChannelProfile, t: float, system: str | None = None) -> list[dict[str, str]]:
     user = (
         f"Chaîne : {profile.display_name}.\n"
         f"3 images consécutives ci-jointes : t-1 s, t (pic présumé), t+1 s, avec t = {t:.1f} s.\n"
         "Juge le moment montré. Réponds UNIQUEMENT par le JSON demandé."
     )
     return [
-        {"role": "system", "content": load_prompt(profile.llm.prompt, "vision_scan")},
+        {"role": "system", "content": system or load_prompt(profile.llm.prompt, "vision_scan")},
         {"role": "user", "content": user},
     ]
 
@@ -281,6 +293,7 @@ def scan_source(
 
     out: list[Highlight] = []
     answered = False
+    system: str | None = None  # calculé au premier appel réel (pas pour un scan tout en cache)
     with tempfile.TemporaryDirectory(prefix="minavio_vscan_") as td:
         for i, t in enumerate(times):
             key = (str(src), round(t, 2), mtime, model, prompt_id)
@@ -300,7 +313,9 @@ def scan_source(
                 t0 = time.monotonic()
                 stats.calls += 1
                 try:
-                    raw = llm.chat_json(_messages(profile, t), VisionVerdict, frames).model_dump()
+                    system = system or _system(profile, llm)
+                    msgs = _messages(profile, t, system)
+                    raw = llm.chat_json(msgs, VisionVerdict, frames).model_dump()
                 except (ValueError, ValidationError) as exc:
                     log.warning("vision_scan : JSON invalide à %.1fs, fenêtre ignorée (%s)", t, exc)
                     stats.invalid += 1

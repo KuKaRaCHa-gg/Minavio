@@ -323,3 +323,15 @@ def test_prompt_themes():
     assert "CHAMPION" in load_prompt("gaming", "vision_scan")
     assert "waouh" in load_prompt("tech_facts", "vision_scan")
     assert "faciale" in load_prompt("stream_bestof", "vision_scan")
+
+
+def test_system_prompt_includes_knowledge(monkeypatch):
+    from minavio.llm import vision_scan as vs
+    from minavio.llm.prompts import load_prompt
+
+    p = _profile()
+    base = load_prompt(p.llm.prompt, "vision_scan")
+    assert vs._system(p, None).startswith(base)
+    assert len(vs._system(p, None)) > len(base)  # fiches Apex / killfeed ajoutées
+    monkeypatch.setenv("MINAVIO_KB", "0")
+    assert vs._system(p, None) == base
