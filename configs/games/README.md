@@ -19,3 +19,5 @@ Aucun code à écrire : un jeu = un dossier + un YAML.
 4. Ajouter l'id du jeu à `games: [...]` dans les profils de chaîne concernés.
 5. Vérifier : `minavio games list` puis `minavio profiles validate`, et tester sur un clip
    avec `minavio run <profil> clip.mp4 --dry-run -v`.
+
+Jeux disponibles : `apex_legends`, `valorant`, `fortnite`, `warzone`.
