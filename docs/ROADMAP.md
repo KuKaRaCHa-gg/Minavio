@@ -125,3 +125,19 @@ test e2e étendu → push. `main` n'avance que sur un lot validé.
 - Revue `orchestrator` : 7 bugs trouvés, tous corrigés avec tests de non-régression.
 
 Reporté au lot 4.2 : `speech_rate_z` du détecteur hype (nécessite la transcription avant la détection).
+
+## État — lot Minivitch livré (sur `main`)
+
+Outils open source évalués : PySceneDetect (BSD-3, **intégré** : `scene_change` AdaptiveDetector),
+Kenney (CC0, prévu ; banque embarquée procédurale CC0 faute d'accès réseau, remplaçable via
+`audio.sfx.library_dir`), ClipsAI (MIT, écarté : cadrage podcast), vidcom (YOLO, licence non vérifiée,
+écarté), Eklipse / DOR (commerciaux cloud, écartés).
+
+- Cold open (`editing.cold_open`) centré sur l'instant décisif (`signals.peak_t`) + transition `rewind`.
+- Ordre `countdown` + `rank_card` → profil `minivitch_top10`.
+- SFX (`audio.sfx`) : whoosh entre moments, hit/boom à l'instant du kill, rewind synchronisé.
+- `kill_counter` pixel calé sur le kill ; chapitres YouTube (Qwen, règles YouTube) ; Shorts par moment
+  (`shorts.per_highlight`, `--shorts N`).
+- Contrat : `Clip.moment` / `Clip.peak_t`, `Timeline.moments()` par identifiant, `SfxCue`, `Chapter`.
+- Revue `orchestrator` : 7 points, tous corrigés (moments, popups dans le cold open, SFX au kill,
+  rewind synchronisé, peak_t fusionné, 2e hit, scenedetect ≥ 0.7).
