@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from minavio.config.schema import ChannelProfile, OutputFormat
-from minavio.core import ffmpeg, reframe
+from minavio.core import ffmpeg, reframe, sfx
 from minavio.core.audio import mix
 from minavio.core.models import Clip, Timeline
 from minavio.errors import MinavioError
@@ -124,6 +124,22 @@ def build_command(
         args += ["-stream_loop", "-1", "-i", str(timeline.music)]
         music_label = f"{idx}:a"
         idx += 1
+    sfx_cues: list[tuple[int, float, float]] = []
+    sfx_cfg = profile.audio.sfx
+    if sfx_cfg.enabled and timeline.sfx:
+        input_of: dict[Path, int] = {}
+        for cue in sorted(timeline.sfx, key=lambda c: c.at):
+            if cue.at >= total:
+                continue
+            path = sfx.resolve_sound(cue.sound, sfx_cfg)
+            if path is None:
+                continue
+            if path not in input_of:
+                args += ["-i", str(path)]
+                input_of[path] = idx
+                idx += 1
+            sfx_cues.append((input_of[path], cue.at, cue.gain_db))
+    sfx_parts, sfx_labels = mix.sfx_graph(sfx_cues, SAMPLE_RATE) if sfx_cues else ([], [])
     for k, file in sorted((overlay_files or {}).items()):
         if not 0 <= k < len(timeline.overlays):
             raise MinavioError(f"overlay_files[{k}] : index hors de timeline.overlays")
@@ -144,8 +160,15 @@ def build_command(
         idx += 1
     graph.append(f"[{cur}]format=yuv420p[vout]")
 
+    graph += sfx_parts
     graph += mix.audio_graph(
-        "voice", music_label, total, profile.audio.loudness_lufs, profile.audio.ducking, "aout"
+        "voice",
+        music_label,
+        total,
+        profile.audio.loudness_lufs,
+        profile.audio.ducking,
+        "aout",
+        sfx=sfx_labels or None,
     )
 
     args += ["-filter_complex", ";".join(graph), "-map", "[vout]", "-map", "[aout]"]

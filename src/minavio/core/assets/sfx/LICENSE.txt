@@ -1,0 +1,10 @@
+Banque SFX embarquée de Minavio
+===============================
+
+Les fichiers .ogg de ce dossier sont générés par `generate.py` (synthèse ffmpeg lavfi, aucun
+échantillon tiers). Ils sont donc CC0 / domaine public de fait : utilisation libre, y compris
+commerciale, sans attribution.
+
+Si vous remplacez ces sons par ceux des packs de Kenney (https://kenney.nl : « Impact Sounds »,
+« Interface Sounds », « Sci-fi Sounds », licence CC0 1.0), conservez cette mention :
+"Sounds by Kenney (kenney.nl), CC0 1.0 Universal".
