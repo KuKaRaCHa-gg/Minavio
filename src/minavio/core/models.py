@@ -102,3 +102,56 @@ class Timeline(_Model):
     @property
     def duration(self) -> float:
         return sum(c.duration / c.speed for c in self.clips)
+
+    def clip_starts(self) -> list[float]:
+        """Début de chaque clip en temps de la timeline rendue."""
+        out, t = [], 0.0
+        for c in self.clips:
+            out.append(t)
+            t += c.duration / c.speed
+        return out
+
+    def moments(self) -> list[Moment]:
+        """Regroupe les clips en moments : les sous-clips d'autocut d'un même moment sont
+        consécutifs, même source, même label, écart source < MOMENT_GAP_S. Le cold open est
+        toujours un moment à part (index 0 si présent)."""
+        starts = self.clip_starts()
+        moments: list[Moment] = []
+        for i, c in enumerate(self.clips):
+            prev = self.clips[i - 1] if i else None
+            same = (
+                prev is not None
+                and i != self.cold_open_clips
+                and c.source == prev.source
+                and c.highlight_label == prev.highlight_label
+                and 0 <= c.start - prev.end < MOMENT_GAP_S
+            )
+            if same:
+                m = moments[-1]
+                moments[-1] = m.model_copy(
+                    update={"end": starts[i] + c.duration / c.speed, "last_clip": i}
+                )
+            else:
+                moments.append(
+                    Moment(
+                        start=starts[i],
+                        end=starts[i] + c.duration / c.speed,
+                        first_clip=i,
+                        last_clip=i,
+                        label=c.highlight_label,
+                        cold_open=i < self.cold_open_clips,
+                    )
+                )
+        return moments
+
+
+MOMENT_GAP_S = 3.0
+
+
+class Moment(_TimeSpan):
+    """Groupe de clips consécutifs (temps de la timeline rendue)."""
+
+    first_clip: int
+    last_clip: int
+    label: str | None = None
+    cold_open: bool = False

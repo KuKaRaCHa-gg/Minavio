@@ -51,3 +51,25 @@ def test_cli_validate():
     result = CliRunner().invoke(app, ["profiles", "validate"])
     assert result.exit_code == 0, result.output
     assert "ok    thelostchat" in result.output
+
+
+def test_timeline_moments_group_autocut_fragments():
+    a, b = Path("a.mp4"), Path("b.mp4")
+    tl = Timeline(
+        profile_id="t",
+        fps=30,
+        cold_open_clips=1,
+        clips=[
+            Clip(source=b, start=20, end=22, highlight_label="kill"),  # cold open
+            Clip(source=a, start=10, end=12, highlight_label="kill"),
+            Clip(source=a, start=12.5, end=14, highlight_label="kill"),  # fragment autocut
+            Clip(source=b, start=18, end=24, highlight_label="kill"),
+        ],
+    )
+    ms = tl.moments()
+    assert [(m.first_clip, m.last_clip, m.cold_open) for m in ms] == [
+        (0, 0, True),
+        (1, 2, False),
+        (3, 3, False),
+    ]
+    assert (ms[1].start, ms[1].end) == (2.0, 5.5)
