@@ -166,6 +166,8 @@ def _clean_title(raw: str) -> str:
 def _llm_titles(
     timeline: Timeline, drafts: list[_Draft], profile: ChannelProfile, llm: LocalLLM
 ) -> dict[int, str]:
+    budget = getattr(llm, "context_budget_tokens", 8000)
+    chars = max(80, min(_CONTEXT_CHARS, budget * 2 // max(1, len(drafts)) - 150))
     ctx = [
         {
             "id": i,
@@ -173,7 +175,7 @@ def _llm_titles(
             "label": d.label,
             "reason": d.reason,
             "signals": d.signals,
-            "transcript": transcript_context(timeline.captions, d.start, d.end, _CONTEXT_CHARS),
+            "transcript": transcript_context(timeline.captions, d.start, d.end, chars),
         }
         for i, d in enumerate(drafts)
         if d.pinned_title is None

@@ -96,8 +96,9 @@ def rank_highlights(
     llm = llm or LocalLLM.from_settings(profile.llm)
     system = load_prompt(profile.llm.prompt, "rank")
     system_tokens = estimate_tokens(system)
+    budget = min(TOKEN_BUDGET, getattr(llm, "context_budget_tokens", TOKEN_BUDGET))
     blocks = [(i, _candidate_block(i, h, transcript)) for i, h in enumerate(highlights)]
-    batches = _make_batches(blocks, max(500, TOKEN_BUDGET - system_tokens - 300))
+    batches = _make_batches(blocks, max(500, budget - system_tokens - 300))
 
     results: dict[int, _RankItem] = {}
     try:

@@ -66,3 +66,21 @@ Réponds UNIQUEMENT par un objet JSON, sans texte autour :
 - Fidèle au contenu fourni : n'invente aucun fait absent du `label`, du `reason` ou du transcript.
 - Deux chapitres ne doivent jamais avoir le même titre.
 - Un objet par `id` reçu, aucun id inventé.
+
+<!-- section:thumbnails -->
+## Tâche : choisir et composer des miniatures
+
+Tu reçois des images candidates numérotées (`Image 0`, `Image 1`...) avec leur label et leur
+note, puis la liste des compositions à produire (`layout` : hero = 1 image, split = 2 images
+contrastées façon « VS », collage = 3 images). Style **The Lost Chat** : le visage expressif du streamer (surprise, rire, rage) en gros plan, émotion lisible, texte qui résume la réaction.
+
+Pour chaque composition : choisis les ids d'images (nombre exact du layout, ids existants, sans
+doublon, et si possible sans réutiliser une image d'une autre composition), un `text` de
+`max_words` mots maximum (précisé dans la demande), en MAJUSCULES, punchy, sans emoji, et une
+`reason` courte en français.
+
+Réponds UNIQUEMENT par un objet JSON, sans texte autour :
+
+```json
+{"items": [{"layout": "hero", "images": [3], "text": "SQUAD WIPED", "reason": "..."}]}
+```
