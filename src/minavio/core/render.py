@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from minavio.config.schema import ChannelProfile, OutputFormat
-from minavio.core import ffmpeg, reframe, sfx
+from minavio.core import ffmpeg, interpolate, reframe, sfx
 from minavio.core.audio import mix
 from minavio.core.models import Clip, Timeline
-from minavio.errors import MinavioError
+from minavio.errors import FFmpegError, MinavioError
+
+log = logging.getLogger("minavio.render")
 
 SAMPLE_RATE = 48000
+SLOWMO_GAIN_DB = -4.0  # atténuation de l'audio d'un ralenti (atempo seul sonne agressif)
 
 
 def atempo_chain(speed: float) -> str:
@@ -49,11 +53,33 @@ def fit_clips(clips: list[Clip], max_duration: float | None) -> list[Clip]:
 
 
 def _clip_segments(
-    i: int, clip: Clip, info, fmt: OutputFormat, plan: reframe.ClipReframe
+    i: int,
+    clip: Clip,
+    info,
+    fmt: OutputFormat,
+    plan: reframe.ClipReframe,
+    *,
+    v_in: int | None = None,
+    a_in: int | None = None,
+    has_audio: bool | None = None,
+    interp_mode: str = "none",
+    slow_gain: bool = False,
 ) -> list[str]:
+    """Segments de filter_complex d'un clip.
+
+    `v_in` / `a_in` : index d'entrée vidéo / audio (défaut i) ; `interp_mode` : rife (vidéo déjà
+    interpolée et ralentie), minterpolate ou none ; `slow_gain` : -4 dB sur l'audio ralenti.
+    """
+    v_in = i if v_in is None else v_in
+    a_in = i if a_in is None else a_in
+    has_audio = info.has_audio if has_audio is None else has_audio
     dur = clip.duration / clip.speed
+    if clip.interpolate and interp_mode != "none":
+        stretch = interpolate.interpolation_filter(clip.speed, fmt.fps, interp_mode)
+    else:
+        stretch = f"setpts=PTS/{clip.speed:.5f}"
     seg = [
-        f"[{i}:v]setpts=PTS-STARTPTS[t{i}]",
+        f"[{v_in}:v]setpts=PTS-STARTPTS[t{i}]",
         *reframe.build_reframe(
             plan.mode,
             f"t{i}",
@@ -68,26 +94,48 @@ def _clip_segments(
             facecam=plan.facecam,
             split_ratio=plan.split_ratio,
         ),
-        f"[r{i}]setpts=PTS/{clip.speed:.5f},fps={fmt.fps},format=yuv420p[v{i}]",
+        f"[r{i}]{stretch + ',' if stretch else ''}fps={fmt.fps},format=yuv420p[v{i}]",
     ]
-    if info.has_audio:
+    if has_audio:
         tempo = atempo_chain(clip.speed)
         chain = ",".join(
             p
             for p in (
                 "asetpts=PTS-STARTPTS",
                 tempo,
+                f"volume={SLOWMO_GAIN_DB:g}dB" if slow_gain else "",
                 f"aresample={SAMPLE_RATE}",
                 "aformat=sample_fmts=fltp:channel_layouts=stereo",
             )
             if p
         )
-        seg.append(f"[{i}:a]{chain}[a{i}]")
+        seg.append(f"[{a_in}:a]{chain}[a{i}]")
     else:
         seg.append(
             f"anullsrc=r={SAMPLE_RATE}:cl=stereo,atrim=duration={dur:.4f},asetpts=PTS-STARTPTS[a{i}]"
         )
     return seg
+
+
+def _track_has_audio(track: Path) -> bool:
+    """Piste de remplacement (souvent audio seul, que `ffmpeg.probe` refuse faute de vidéo)."""
+    if not Path(track).exists():
+        raise MinavioError(f"Piste audio de remplacement introuvable : {track}")
+    try:
+        return ffmpeg.probe(track).has_audio
+    except FFmpegError:
+        return True
+
+
+def _audio_track(timeline: Timeline, source: Path) -> Path | None:
+    """Piste audio retraitée de `source` (clé exacte, sinon chemin résolu)."""
+    tracks = timeline.audio_tracks
+    if not tracks:
+        return None
+    if source in tracks:
+        return tracks[source]
+    resolved = source.resolve()
+    return next((v for k, v in tracks.items() if Path(k).resolve() == resolved), None)
 
 
 def build_command(
@@ -96,29 +144,86 @@ def build_command(
     out: Path,
     profile: ChannelProfile,
     overlay_files: dict[int, Path] | None = None,
+    temps: list[Path] | None = None,
 ) -> list[str]:
-    """Construit les arguments ffmpeg (sans le binaire) ; sonde les sources."""
+    """Construit les arguments ffmpeg (sans le binaire) ; sonde les sources.
+
+    `temps` : reçoit les fichiers intermédiaires créés (vidéos RIFE) à supprimer après le rendu.
+    """
     clips = fit_clips(timeline.clips, fmt.max_duration_s)
     if not clips:
         raise MinavioError("Timeline vide : aucun clip à rendre (aucun highlight retenu ?)")
     total = sum(c.duration / c.speed for c in clips)
 
     infos = {s: ffmpeg.probe(s) for s in {c.source for c in clips}}
+    slowmo = profile.editing.slowmo
+    interp_mode = (
+        interpolate.resolve_mode(slowmo.interpolation)
+        if any(c.interpolate for c in clips)
+        else "none"
+    )
     args: list[str] = []
-    for c in clips:
+    n_inputs = 0
+    v_ins: list[int] = []
+    a_ins: list[int] = []
+    a_has: list[bool] = []
+    modes: list[str] = []
+    for i, c in enumerate(clips):
         # seek en entrée : chaque entrée ne décode que son fragment (pas depuis t=0)
-        args += ["-ss", f"{c.start:.4f}", "-t", f"{c.duration:.4f}", "-i", str(c.source)]
+        seek = ["-ss", f"{c.start:.4f}", "-t", f"{c.duration:.4f}"]
+        args += [*seek, "-i", str(c.source)]
+        main = n_inputs
+        n_inputs += 1
+        mode = interp_mode if c.interpolate else "none"
+        if mode == "rife":
+            tmp = out.parent / f".rife_{out.stem}_{i}.mp4"
+            if temps is not None:
+                temps.append(tmp)
+            try:
+                interpolate.rife_slowmo(c.source, c.start, c.end, c.speed, tmp, out.parent)
+            except MinavioError as e:
+                if slowmo.interpolation != "auto":
+                    raise
+                log.warning("RIFE a échoué (%s) : repli sur minterpolate.", str(e).splitlines()[0])
+                mode = "minterpolate"
+            else:
+                args += ["-i", str(tmp)]
+                v_ins.append(n_inputs)
+                n_inputs += 1
+        if mode != "rife":
+            v_ins.append(main)
+        modes.append(mode)
+        track = _audio_track(timeline, c.source)
+        if track is not None:
+            args += [*seek, "-i", str(track)]
+            a_ins.append(n_inputs)
+            a_has.append(_track_has_audio(track))
+            n_inputs += 1
+        else:
+            a_ins.append(main)
+            a_has.append(infos[c.source].has_audio)
     n = len(clips)
 
     graph: list[str] = []
     for i, c in enumerate(clips):
         plan = reframe.plan_clip(c.source, c.start, c.end, fmt.reframe, c.zoom, profile.framing)
-        graph += _clip_segments(i, c, infos[c.source], fmt, plan)
+        graph += _clip_segments(
+            i,
+            c,
+            infos[c.source],
+            fmt,
+            plan,
+            v_in=v_ins[i],
+            a_in=a_ins[i],
+            has_audio=a_has[i],
+            interp_mode=modes[i],
+            slow_gain=c.speed < 1 and (c.interpolate or slowmo.enabled),
+        )
     graph.append("".join(f"[v{i}][a{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=1[vcat][voice]")
 
     # overlays (index du dict = index dans timeline.overlays)
     cur = "vcat"
-    idx = n
+    idx = n_inputs
     music_label = None
     if timeline.music is not None:
         args += ["-stream_loop", "-1", "-i", str(timeline.music)]
@@ -187,5 +292,10 @@ def render_timeline(
 ) -> Path:
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    ffmpeg.run(build_command(timeline, fmt, out, profile, overlay_files))
+    temps: list[Path] = []
+    try:
+        ffmpeg.run(build_command(timeline, fmt, out, profile, overlay_files, temps))
+    finally:
+        for t in temps:
+            t.unlink(missing_ok=True)
     return out

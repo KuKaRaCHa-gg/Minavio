@@ -6,7 +6,7 @@ import bisect
 import logging
 from pathlib import Path
 
-from minavio.config.schema import ChannelProfile
+from minavio.config.schema import ChannelProfile, SlowmoSettings
 from minavio.core.models import Clip, Highlight, Timeline, TranscriptSegment, Word
 
 log = logging.getLogger("minavio.edit")
@@ -17,6 +17,8 @@ _MIN_CAPTION_S = 0.05
 # Clés de `Highlight.signals` = instant du pic (s source) ; sinon centre du highlight.
 PEAK_SIGNAL_KEYS = ("peak_t", "peak_time", "peak_s", "t_peak")
 MIN_FRAGMENT_S = 0.25  # sous-clips plus courts que ça (après autocut) : fusionnés au voisin
+
+MIN_SLOW_EDGE_S = 0.1  # un [avant]/[après] plus court que ça est absorbé par le ralenti
 
 KeepSpans = dict[Path, list[tuple[float, float]]]
 
@@ -116,24 +118,60 @@ def _fragments(w: _Window, keep_spans: KeepSpans | None) -> list[tuple[float, fl
     return frags
 
 
-def _effective(w: _Window, keep_spans: KeepSpans | None) -> float:
-    return sum(e - s for s, e in _fragments(w, keep_spans))
+def _slow_range(
+    w: _Window, frag: tuple[float, float], slow: SlowmoSettings | None
+) -> tuple[float, float] | None:
+    """Plage source ralentie dans `frag` : `duration_s` centrée sur le pic, bornée au fragment.
+
+    None si le ralenti est inactif, si le label n'est pas ciblé ou si le pic n'est pas dans `frag`.
+    """
+    if slow is None or not slow.enabled or w.label not in slow.labels:
+        return None
+    s, e = frag
+    if not s <= w.peak <= e:
+        return None
+    lo, hi = max(s, w.peak - slow.duration_s / 2), min(e, w.peak + slow.duration_s / 2)
+    if lo - s < MIN_SLOW_EDGE_S:
+        lo = s
+    if e - hi < MIN_SLOW_EDGE_S:
+        hi = e
+    return (lo, hi) if hi - lo > 1e-9 else None
+
+
+def _effective(
+    w: _Window, keep_spans: KeepSpans | None, slow: SlowmoSettings | None = None
+) -> float:
+    """Durée RENDUE de la fenêtre (autocut et ralenti inclus)."""
+    total = 0.0
+    for f in _fragments(w, keep_spans):
+        total += f[1] - f[0]
+        if (r := _slow_range(w, f, slow)) is not None:
+            total += (r[1] - r[0]) * (1 / slow.factor - 1)  # type: ignore[union-attr]
+    return total
 
 
 def _select(
-    windows: list[_Window], target: float, keep_spans: KeepSpans | None = None
+    windows: list[_Window],
+    target: float,
+    keep_spans: KeepSpans | None = None,
+    slow: SlowmoSettings | None = None,
 ) -> list[_Window]:
     if keep_spans:  # une fenêtre entièrement coupée disparaît
         windows = [w for w in windows if _fragments(w, keep_spans)]
     chosen: list[_Window] = []
     total = 0.0
     for w in sorted(windows, key=lambda x: -x.score):
-        dur = _effective(w, keep_spans)
+        dur = _effective(w, keep_spans, slow)
         if total + dur <= target:
             chosen.append(w)
             total += dur
         elif not chosen:  # au moins un clip, tronqué à la durée cible
             w.end = w.start + target
+            for _ in range(30):  # le ralenti allonge le rendu : on réduit jusqu'à tenir
+                eff = _effective(w, keep_spans, slow)
+                if eff <= target + 1e-6:
+                    break
+                w.end = w.start + max(w.duration * target / eff * 0.999, 0.1)
             chosen.append(w)
             break
     return sorted(chosen, key=lambda x: (str(x.source), x.start))
@@ -145,6 +183,7 @@ def _snap(
     profile: ChannelProfile,
     keep_spans: KeepSpans | None = None,
     t0: float = 0.0,
+    slow: SlowmoSettings | None = None,
 ) -> None:
     """Aligne chaque coupe de fin sur le beat le plus proche (dans la tolérance du pacing).
 
@@ -155,7 +194,7 @@ def _snap(
     sorted_beats = sorted(beats)
     t = t0
     for w in windows:
-        eff = _effective(w, keep_spans)
+        eff = _effective(w, keep_spans, slow)
         cut = t + eff
         i = bisect.bisect_left(sorted_beats, cut)
         cands = sorted_beats[max(0, i - 1) : i + 1]
@@ -166,43 +205,68 @@ def _snap(
                 old_end = w.end
                 w.end = w.start + new_dur
                 # avec autocut, la fin déplacée peut tomber dans un creux : on vérifie le résultat
-                if keep_spans and abs(t + _effective(w, keep_spans) - beat) > 1e-6:
+                if (keep_spans or slow) and abs(t + _effective(w, keep_spans, slow) - beat) > 1e-6:
                     w.end = old_end
-        t += _effective(w, keep_spans)
+        t += _effective(w, keep_spans, slow)
+
+
+def _runs(clips: list[Clip]) -> list[list[int]]:
+    """Groupes d'indices de clips consécutifs ET contigus dans la source (pièces d'un ralenti)."""
+    runs: list[list[int]] = []
+    for i, c in enumerate(clips):
+        prev = clips[i - 1] if i else None
+        if prev is not None and prev.source == c.source and abs(prev.end - c.start) < 1e-9:
+            runs[-1].append(i)
+        else:
+            runs.append([i])
+    return runs
 
 
 def _remap_captions(
     clips: list[Clip], transcript: list[TranscriptSegment], start_offset: float = 0.0
 ) -> list[TranscriptSegment]:
     out: list[TranscriptSegment] = []
+    offsets: list[float] = []
     offset = start_offset
-    # segment sans mots : émis uniquement sur le clip de plus grand recouvrement
+    for c in clips:
+        offsets.append(offset)
+        offset += c.duration / c.speed
+    # Un « run » (clips contigus dans la source, ex. avant/ralenti/après) se comporte comme un
+    # seul clip dont le temps timeline est affine par morceaux.
+    runs = _runs(clips)
+    bounds = [(clips[r[0]].start, clips[r[-1]].end) for r in runs]
+    # segment sans mots : émis uniquement sur le run de plus grand recouvrement
     best: dict[int, int] = {}
     for si, seg in enumerate(transcript):
         if seg.words:
             continue
         top = 0.0
-        for ci, clip in enumerate(clips):
-            if seg.source is not None and seg.source != clip.source:
+        for ri, r in enumerate(runs):
+            if seg.source is not None and seg.source != clips[r[0]].source:
                 continue
-            ov = min(seg.end, clip.end) - max(seg.start, clip.start)
+            ov = min(seg.end, bounds[ri][1]) - max(seg.start, bounds[ri][0])
             if ov > top + 1e-9:
-                top, best[si] = ov, ci
-    for ci, clip in enumerate(clips):
+                top, best[si] = ov, ri
+    for ri, r in enumerate(runs):
+        lo, hi = bounds[ri]
+        source = clips[r[0]].source
+
+        def to_tl(t: float, r: list[int] = r, lo: float = lo, hi: float = hi) -> float:
+            t = min(max(t, lo), hi)
+            k = next((j for j in r if t <= clips[j].end + 1e-9), r[-1])
+            c = clips[k]
+            return offsets[k] + (min(max(t, c.start), c.end) - c.start) / c.speed
+
         for si, seg in enumerate(transcript):
-            if seg.end <= clip.start or seg.start >= clip.end:
+            if seg.end <= lo or seg.start >= hi:
                 continue
-            if seg.source is not None and seg.source != clip.source:
+            if seg.source is not None and seg.source != source:
                 continue
-            if not seg.words and best.get(si) != ci:
+            if not seg.words and best.get(si) != ri:
                 continue
-
-            def to_tl(t: float, clip: Clip = clip, offset: float = offset) -> float:
-                return offset + (min(max(t, clip.start), clip.end) - clip.start) / clip.speed
-
             words: list[Word] = []
             for w in seg.words:
-                if w.end <= clip.start or w.start >= clip.end:
+                if w.end <= lo or w.start >= hi:
                     continue
                 s, e = to_tl(w.start), to_tl(w.end)
                 if e - s > 0:
@@ -221,7 +285,6 @@ def _remap_captions(
                         update={"start": start, "end": end, "text": text, "words": words}
                     )
                 )
-        offset += clip.duration / clip.speed
     return out
 
 
@@ -272,7 +335,10 @@ def plan_timeline(
         )
         cold_cfg = None
     all_windows = _windows(highlights, profile)
-    windows = _select(all_windows, target - (cold_cfg.duration_s if cold_cfg else 0), keep_spans)
+    slow = ed.slowmo if ed.slowmo.enabled else None
+    windows = _select(
+        all_windows, target - (cold_cfg.duration_s if cold_cfg else 0), keep_spans, slow
+    )
 
     cold: Clip | None = None
     if cold_cfg and windows:
@@ -292,24 +358,33 @@ def plan_timeline(
     if ed.order == "countdown":
         windows.sort(key=lambda x: x.score)  # tri stable : égalité = ordre chronologique
     if beats and profile.audio.beat_sync:
-        _snap(windows, beats, profile, keep_spans, t0=cold_dur)
+        _snap(windows, beats, profile, keep_spans, t0=cold_dur, slow=slow)
 
     punch = ed.autocut.punch_in
     clips: list[Clip] = [cold] if cold else []
     for mid, w in enumerate(windows):
         for k, (s, e) in enumerate(_fragments(w, keep_spans)):
             zoom = punch if punch > 1 and k % 2 == 1 else 1.0
-            clips.append(
-                Clip(
-                    source=w.source,
-                    start=s,
-                    end=e,
-                    highlight_label=w.label,
-                    zoom=zoom,
-                    moment=mid,
-                    peak_t=w.peak,
+            # [avant][ralenti][après] : même moment, même zoom, vitesse 1 / factor / 1
+            pieces = [(s, e, False)]
+            if slow is not None and (r := _slow_range(w, (s, e), slow)) is not None:
+                pieces = [(s, r[0], False), (r[0], r[1], True), (r[1], e, False)]
+            for ps, pe, is_slow in pieces:
+                if pe - ps <= 1e-9:
+                    continue
+                clips.append(
+                    Clip(
+                        source=w.source,
+                        start=ps,
+                        end=pe,
+                        speed=slow.factor if is_slow and slow else 1.0,
+                        interpolate=bool(is_slow and slow and slow.interpolation != "none"),
+                        highlight_label=w.label,
+                        zoom=zoom,
+                        moment=mid,
+                        peak_t=w.peak,
+                    )
                 )
-            )
     n_real = len(clips) - (1 if cold else 0)
     timeline = Timeline(
         profile_id=profile.id,
@@ -317,7 +392,9 @@ def plan_timeline(
         clips=clips,
         cold_open_clips=1 if cold else 0,
         music=music,
-        beats=[b for b in sorted(beats or []) if 0 <= b <= sum(c.duration for c in clips)],
+        beats=[
+            b for b in sorted(beats or []) if 0 <= b <= sum(c.duration / c.speed for c in clips)
+        ],
     )
     if transcript:
         if len({c.source for c in clips[len(clips) - n_real :]}) > 1 and any(

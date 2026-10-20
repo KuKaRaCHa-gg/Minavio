@@ -338,3 +338,111 @@ def test_cold_open_skipped_when_target_too_short(profile):
     p = _opts(profile, cold=2.0, target_duration_s=3)
     tl = plan_timeline([hl(10, 20, 0.9)], p)
     assert tl.cold_open_clips == 0
+
+
+# --------------------------------------------------------------------------- ralenti (slowmo)
+
+
+def slow_prof(profile: ChannelProfile, **slow) -> ChannelProfile:
+    from minavio.config.schema import SlowmoSettings
+
+    cfg = {"enabled": True, "factor": 0.5, "duration_s": 1.0, **slow}
+    return prof(
+        profile,
+        pre_roll_s=2,
+        post_roll_s=2,
+        min_clip_s=2,
+        max_clip_s=20,
+        target_duration_s=100,
+        slowmo=SlowmoSettings(**cfg),
+    )
+
+
+def peaked(start: float, end: float, peak: float, label: str = "kill", score: float = 0.5):
+    h = hl(start, end, score=score, label=label)
+    h.signals["peak_t"] = peak
+    return h
+
+
+def test_slowmo_splits_clip_centered_on_peak(profile):
+    p = slow_prof(profile)
+    tl = plan_timeline([peaked(10, 12, 11)], p)  # fenêtre source 8..14, pic 11
+    assert [(c.start, c.end, c.speed, c.interpolate) for c in tl.clips] == [
+        (8, 10.5, 1.0, False),
+        (10.5, 11.5, 0.5, True),
+        (11.5, 14, 1.0, False),
+    ]
+    assert {c.moment for c in tl.clips} == {0}
+    assert all(c.peak_t == 11 for c in tl.clips)
+    assert tl.duration == pytest.approx(6 + 1.0)  # 1 s source ralentie x0,5 = +1 s
+    (m,) = tl.moments()
+    assert m.peak == pytest.approx(2.5 + 1.0)  # milieu du ralenti rendu (2.5 -> 4.5)
+
+
+def test_slowmo_disabled_or_label_not_targeted_or_no_interp(profile):
+    from minavio.config.schema import SlowmoSettings
+
+    p = slow_prof(profile)
+    off = prof(p, slowmo=SlowmoSettings(enabled=False))
+    assert len(plan_timeline([peaked(10, 12, 11)], off).clips) == 1
+    assert len(plan_timeline([peaked(10, 12, 11, label="laugh")], p).clips) == 1
+    tl = plan_timeline([peaked(10, 12, 11)], slow_prof(profile, interpolation="none"))
+    assert [c.interpolate for c in tl.clips] == [False, False, False]
+    assert tl.clips[1].speed == 0.5
+
+
+def test_slowmo_bounded_by_clip(profile):
+    p = slow_prof(profile, duration_s=4)
+    tl = plan_timeline([peaked(0, 2, 0.1)], p)  # fenêtre 0..4, pic au bord : ralenti borné à 0
+    assert min(c.start for c in tl.clips) == 0
+    assert max(c.end for c in tl.clips) == 4
+    assert sum(c.duration for c in tl.clips) == pytest.approx(4)
+    assert tl.clips[0].speed == 0.5 and tl.clips[0].start == 0
+
+
+def test_slowmo_counts_in_target_duration(profile):
+    p = slow_prof(profile, duration_s=2)
+    p = prof(p, target_duration_s=10, max_clip_s=6)
+    hs = [peaked(10, 12, 11, score=0.9), peaked(30, 32, 31, score=0.8)]  # 6 s source + 2 s chacun
+    tl = plan_timeline(hs, p)
+    assert tl.duration <= 10 + 1e-6
+    assert len({c.moment for c in tl.clips}) == 1  # le second ne tient plus (8 + 8 > 10)
+
+
+def test_slowmo_not_in_cold_open(profile):
+    cold = profile.editing.cold_open.model_copy(update={"enabled": True, "duration_s": 3})
+    p = prof(slow_prof(profile), cold_open=cold)
+    tl = plan_timeline([peaked(10, 12, 11)], p)
+    first = tl.clips[0]
+    assert tl.cold_open_clips == 1 and first.moment == -1
+    assert first.speed == 1.0 and not first.interpolate
+    assert any(c.speed == 0.5 for c in tl.clips[1:])
+
+
+def test_slowmo_beats_and_captions_follow_rendered_time(profile):
+    p = slow_prof(profile)
+    seg = TranscriptSegment(start=10.0, end=12.0, text="boom", source=SRC)
+    words = TranscriptSegment(
+        start=10.0,
+        end=12.0,
+        text="a b",
+        source=SRC,
+        words=[Word(start=10.0, end=10.5, text="a"), Word(start=11.2, end=11.8, text="b")],
+    )
+    tl = plan_timeline([peaked(10, 12, 11)], p, beats=[1.0, 6.5, 50.0], transcript=[seg, words])
+    assert tl.beats == [1.0, 6.5]  # bornées par la durée RENDUE (7 s)
+    plain, with_words = tl.captions
+    # sans mots : une seule légende couvrant avant + ralenti + après
+    assert plain.start == pytest.approx(2.0)  # 10 - 8
+    assert plain.end == pytest.approx(2.5 + 2.0 + 0.5)
+    b = with_words.words[1]  # 11.2-11.8 est dans le ralenti : durées x2
+    assert b.start == pytest.approx(2.5 + (11.2 - 10.5) * 2)
+    assert b.end == pytest.approx(4.5 + 0.3)  # fin dans la partie « après »
+
+
+def test_slowmo_with_autocut(profile):
+    p = slow_prof(profile)
+    tl = plan_timeline([peaked(10, 12, 11)], p, keep_spans={SRC: [(8.0, 11.2), (11.4, 14.0)]})
+    assert tl.duration == pytest.approx(sum(c.duration / c.speed for c in tl.clips))
+    assert len({c.moment for c in tl.clips}) == 1
+    assert sum(1 for c in tl.clips if c.speed == 0.5) == 1
