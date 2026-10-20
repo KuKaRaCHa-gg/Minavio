@@ -26,12 +26,14 @@ detection:
   - { name: speech, weight: 1.0 }                # le fil narratif vient de la voix
   - { name: scene_change, weight: 0.5, params: { threshold: 0.35 } }
   - { name: hype, weight: 0.5 }                  # pics d'intensité vocale/audio combinés
+  - { name: vision_scan, weight: 0.5 }           # le LLM vision repère les schémas/écrans parlants
 
 audio:
   music_dir: assets/music/bytetricks
   beat_sync: true
   loudness_lufs: -14
   ducking: { enabled: true, music_gain_db: -20 }
+  denoise: { enabled: true }                     # voix : ventilo, clavier
 
 llm:
   prompt: tech_facts
@@ -53,3 +55,6 @@ editing:
 
 # Miniatures (voir configs/README.md).
 thumbnails: { enabled: true, count: 3, layouts: [hero, split], max_words: 4 }
+
+# Publication YouTube : jamais automatique (`minavio publish bytetricks <job>`).
+publish: { category_id: "28" }  # 28 = Science & Technology

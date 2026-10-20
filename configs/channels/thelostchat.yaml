@@ -28,6 +28,8 @@ detection:
   - { name: scene_change, weight: 0.3 }
   - { name: hype, weight: 1.0 }                  # pics d'intensité vocale/audio combinés
   - { name: chat_spike, weight: 0.8 }            # bonus : ignoré si pas de log de chat
+  - { name: vision_scan, weight: 0.7 }           # le LLM vision repère les réactions/scènes fortes
+  - { name: motion_intensity, weight: 0.4 }      # gestes amples, agitation à l'écran
 
 audio:
   music_dir: assets/music/thelostchat
@@ -58,3 +60,6 @@ framing:
 
 # Miniatures (voir configs/README.md).
 thumbnails: { enabled: true, count: 3, layouts: [hero, collage], max_words: 4 }
+
+# Publication YouTube : jamais automatique (`minavio publish thelostchat <job>`).
+publish: { category_id: "24" }  # 24 = Entertainment

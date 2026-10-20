@@ -1,7 +1,12 @@
 """Orchestration du pipeline `minavio run`.
 
-Étapes : collect → detect → transcribe → rank → copy → music → beats → autocut → timeline →
-overlays → sfx → chapters → render → thumbnails → shorts.
+Étapes : collect → [audio_clean] → detect → transcribe → rank → copy → music → beats → autocut →
+timeline → overlays → sfx → chapters → render → thumbnails → shorts.
+`audio_clean` n'existe que si `audio.separation` ou `audio.denoise` est activé (hors `--dry-run`) :
+`prepare_audio_tracks` produit une piste propre par source (`audio_tracks.json`, `{source: piste}`),
+passée à `timeline.audio_tracks` avant le rendu (compilation et shorts). Un échec donne un warning
+et le rendu garde l'audio d'origine.
+
 `autocut` n'existe que si `profile.editing.autocut.enabled` : elle tourne sur chaque source
 retenue (après `transcribe`, avant `timeline`) et ses plages conservées (`keep_spans`) sont passées
 à `plan_timeline`. En cas d'échec, un warning est émis et le montage se fait sans coupe de silences.
@@ -72,6 +77,7 @@ _API = {
     "run_detectors": "minavio.core.detect:run_detectors",
     "transcribe": "minavio.core.asr:transcribe",
     "analyze_keep_spans": "minavio.core.autocut:analyze_keep_spans",
+    "prepare_audio_tracks": "minavio.core.audio.tracks:prepare_audio_tracks",
     "detect_beats": "minavio.core.audio.beats:detect_beats",
     "rank_highlights": "minavio.llm.rank:rank_highlights",
     "generate_copy": "minavio.llm.copywriting:generate_copy",
@@ -161,8 +167,9 @@ class _Steps:
         load: Callable[[Any], Any] = lambda x: x,
         optional: bool = False,
         default: Any = None,
+        file: str | None = None,
     ) -> Any:
-        path = self.dir / f"{name}.json"
+        path = self.dir / f"{file or name}.json"
         if self.resume and path.exists():
             try:
                 value = load(json.loads(path.read_text(encoding="utf-8")))
@@ -407,6 +414,21 @@ def _short_format(profile: ChannelProfile) -> OutputFormat:
     return matches[0]
 
 
+def _load_audio_tracks(d: dict[str, str]) -> dict[Path, Path]:
+    tracks = {Path(k): Path(v) for k, v in d.items()}
+    missing = [str(v) for v in tracks.values() if not v.exists()]
+    if missing:  # pistes supprimées : on recalcule
+        raise MinavioError(f"piste(s) absente(s) : {missing[:1]}")
+    return tracks
+
+
+def _with_audio_tracks(timeline: Timeline, tracks: dict[Path, Path]) -> Timeline:
+    """Pistes propres des seules sources utilisées par les clips de la timeline."""
+    used = {c.source for c in timeline.clips}
+    own = {k: v for k, v in tracks.items() if k in used}
+    return timeline.model_copy(update={"audio_tracks": own}) if own else timeline
+
+
 def _load_highlights(d: list[Any]) -> list[Highlight]:
     return [Highlight.model_validate(x) for x in d]
 
@@ -451,6 +473,17 @@ def run_job(
     # collect est toujours rejouée (calcul du job_id) ; on persiste juste son résultat.
     (work / "collect.json").write_text(json.dumps([str(p) for p in sources], indent=2))
 
+    audio_tracks: dict[Path, Path] = {}
+    if (profile.audio.separation.enabled or profile.audio.denoise.enabled) and not dry_run:
+        audio_tracks = steps.run(
+            "audio_clean",
+            lambda: _api("prepare_audio_tracks")(sources, profile, work),
+            dump=lambda d: {str(k): str(v) for k, v in d.items()},
+            load=_load_audio_tracks,
+            optional=True,
+            default={},
+            file="audio_tracks",
+        )
     highlights: list[Highlight] = steps.run(
         "detect",
         lambda: _api("run_detectors")(sources, profile),
@@ -552,6 +585,7 @@ def run_job(
     target = out_dir / profile.id
     target.mkdir(parents=True, exist_ok=True)
     timeline = _decorate(steps, "", timeline, profile, copy, highlights)
+    timeline = _with_audio_tracks(timeline, audio_tracks)
 
     if chapters and profile.chapters:
         if not llm_on:
@@ -567,7 +601,9 @@ def run_job(
             )
             if chapter_list:
                 ch_path = target / f"{job_id}_chapters.txt"
-                ch_path.write_text(_api("format_chapters")(chapter_list), encoding="utf-8")
+                ch_text = _api("format_chapters")(chapter_list)
+                ch_path.write_text(ch_text, encoding="utf-8")
+                (work / "chapters.txt").write_text(ch_text, encoding="utf-8")  # lu par `publish`
                 result.extras.append(ch_path)
 
     for fmt in fmts:
@@ -631,6 +667,7 @@ def run_job(
                         transcript=[s for s in plan_transcript if s.source == h.source] or None,
                         beats=beats,
                         music=music_path,
+                        audio_tracks=audio_tracks,
                         keep_spans=(
                             {h.source: keep_spans[h.source]}
                             if keep_spans and h.source in keep_spans
@@ -764,6 +801,7 @@ def _render_short(
     beats: list[float],
     music: Path | None,
     keep_spans: dict[Path, list[tuple[float, float]]] | None,
+    audio_tracks: dict[Path, Path] | None = None,
 ) -> Path:
     """Timeline dédiée d'un highlight (overlays captions + kill_counter, sfx), puis rendu."""
     tl: Timeline = steps.run(
@@ -782,6 +820,7 @@ def _render_short(
     if not tl.clips:
         raise MinavioError("montage vide")
     tl = _decorate(steps, f"short{i}_", tl, profile, None, [h])
+    tl = _with_audio_tracks(tl, audio_tracks or {})
     files = steps.run(
         f"short{i}_overlay_files",
         lambda: _api("render_overlays")(
