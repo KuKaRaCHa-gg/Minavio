@@ -25,11 +25,12 @@ GITHUB_BASE_URL = "https://models.github.ai/inference"
 # GitHub Models (preview) : ~8 000 tokens en entrée par requête, on garde de la marge.
 GITHUB_CONTEXT_BUDGET = 6000
 
+# openai_compat n'a PAS de variable par défaut : une clé (ex. la vraie clé OpenAI) ne part vers un
+# base_url arbitraire que si le profil le demande explicitement via `api_key_env`.
 _KEY_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
     "google": "GEMINI_API_KEY",
     "github": "GITHUB_TOKEN",
-    "openai_compat": "OPENAI_API_KEY",
 }
 _warned: set[str] = set()
 
@@ -85,7 +86,9 @@ def build_provider(p: LlmProvider, settings: LlmSettings) -> BaseLLM | None:
             model,
             temp,
             api_key=key,
-            vision_model=p.vision_model or model,
+            # Cloud : vision seulement si `vision_model` est explicite (les images restent locales
+            # par défaut, même si le modèle vision local est absent).
+            vision_model=p.vision_model,
             name=f"{label} {model}",
             label=label,
             context_budget_tokens=budget or DEFAULT_CONTEXT_BUDGET,
@@ -94,13 +97,20 @@ def build_provider(p: LlmProvider, settings: LlmSettings) -> BaseLLM | None:
     if p.kind == "openai_compat":
         if not (p.base_url and p.model):
             raise ConfigError("Fournisseur openai_compat : `base_url` et `model` obligatoires.")
-        host = urlparse(p.base_url).netloc or p.base_url
+        url = urlparse(p.base_url)
+        host = url.netloc or p.base_url
+        local_host = (url.hostname or "") in ("localhost", "127.0.0.1", "::1")
+        if key and url.scheme != "https" and not local_host:
+            raise ConfigError(
+                f"Fournisseur openai_compat {host} : clé refusée sur une connexion non chiffrée "
+                "(http://). Utilise https:// ou retire `api_key_env`."
+            )
         return LocalLLM(
             p.base_url,
             p.model,
             temp,
-            api_key=key,  # optionnelle : certains serveurs n'en veulent pas
-            vision_model=p.vision_model or p.model,
+            api_key=key,  # seulement si `api_key_env` est explicite (cf. _KEY_ENV)
+            vision_model=p.vision_model,
             name=f"{p.model} ({host})",
             label=f"LLM {host}",
         )
@@ -118,11 +128,15 @@ def build_chain(settings: LlmSettings) -> LLMChain:
 
 
 class LLMChain:
-    """Essaie les fournisseurs dans l'ordre ; le premier qui répond est mémorisé."""
+    """Essaie les fournisseurs TOUJOURS dans l'ordre configuré (local d'abord en général).
+
+    On ne « colle » pas au dernier qui a répondu : un timeout ponctuel du local (modèle en cours
+    de chargement) ne doit pas basculer le reste du job sur un fournisseur cloud payant.
+    """
 
     def __init__(self, providers: list[BaseLLM]) -> None:
         self.providers = list(providers)
-        self._preferred: BaseLLM | None = None
+        self.last_used: BaseLLM | None = None  # informatif (logs, UI)
 
     @property
     def name(self) -> str:
@@ -144,9 +158,6 @@ class LLMChain:
 
     def _order(self, images: list[Path] | None) -> list[BaseLLM]:
         order = list(self.providers)
-        if self._preferred in order:
-            order.remove(self._preferred)
-            order.insert(0, self._preferred)
         if images:
             order = [p for p in order if p.vision_model]
         return order
@@ -167,7 +178,7 @@ class LLMChain:
                 log.warning("Fournisseur %s indisponible : %s", p.name, exc)
                 failures.append((p.name, exc))
                 continue
-            self._preferred = p
+            self.last_used = p
             return result
         if len(failures) == 1:
             raise failures[0][1]

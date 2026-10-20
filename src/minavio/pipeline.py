@@ -700,7 +700,7 @@ def build_thumbnails(
         if not cands:
             raise MinavioError("aucune image candidate extraite des sources")
         choices: list[ThumbnailChoice] = _api("pick_thumbnails")(
-            cands, profile, copy=copy, llm=_thumbs_llm(profile, use_llm)
+            cands, profile, copy=copy, llm=_thumbs_llm(profile, use_llm), use_llm=use_llm
         )
         if not choices:
             raise MinavioError("aucune miniature retenue")

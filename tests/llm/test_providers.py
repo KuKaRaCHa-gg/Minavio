@@ -57,13 +57,14 @@ def msgs():
 # ---------------------------------------------------------------- chaîne
 
 
-def test_chain_order_fallback_and_memo():
+def test_chain_order_fallback_and_always_retries_first():
     a, b = Fake("a", fail=True), Fake("b")
     chain = LLMChain([a, b])
     assert chain.chat(msgs()) == '{"ok": true}'
     assert (a.calls, b.calls) == (1, 1)
-    chain.chat(msgs())  # b mémorisé : a n'est plus essayé en premier
-    assert (a.calls, b.calls) == (1, 2)
+    chain.chat(msgs())  # l'ordre configuré est toujours respecté : a est retenté d'abord
+    assert (a.calls, b.calls) == (2, 2)
+    assert chain.last_used is b
     assert chain.chat_json(msgs(), Out).ok is True
 
 
@@ -109,14 +110,17 @@ def test_defaults(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
     s = LlmSettings(prompt="gaming")
     g = build_provider(LlmProvider(kind="google"), s)
-    assert g.model == "gemini-2.5-flash" and g.vision_model == "gemini-2.5-flash"
+    assert g.model == "gemini-2.5-flash"
+    assert g.vision_model is None  # cloud : vision seulement si demandée explicitement
     assert g.base_url.startswith("https://generativelanguage.googleapis.com")
     gh = build_provider(LlmProvider(kind="github"), s)
     assert gh.model == "openai/gpt-4.1" and gh.base_url == "https://models.github.ai/inference"
     assert gh.context_budget_tokens == 6000
     assert g.context_budget_tokens == 8000
     c = build_provider(LlmProvider(kind="anthropic"), s)
-    assert c.name == "Claude claude-opus-5-5"
+    assert c.name == "Claude claude-opus-5-5" and c.vision_model is None
+    cv = build_provider(LlmProvider(kind="anthropic", vision_model="claude-opus-5-5"), s)
+    assert cv.vision_model == "claude-opus-5-5"
     local = build_provider(LlmProvider(), s)
     assert local.vision_model == "qwen3-vl:8b" and local.model == s.model
 
@@ -403,3 +407,69 @@ def test_heuristic_texts_are_distinct_and_never_invent_numbers(tmp_path):
     texts = [c.text for c in choices]
     assert len(set(texts)) == len(texts)
     assert not any(ch.isdigit() for t in texts for ch in t)
+
+
+def test_openai_compat_key_only_when_explicit_and_never_over_http(monkeypatch):
+    from minavio.errors import ConfigError
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real-openai")
+    monkeypatch.setenv("MY_VLLM_KEY", "k")
+    s = LlmSettings(prompt="gaming")
+    p = build_provider(
+        LlmProvider(kind="openai_compat", base_url="http://192.168.1.20:8000/v1", model="m"), s
+    )
+    assert "authorization" not in p._client.headers  # clé OpenAI jamais envoyée par défaut
+    with pytest.raises(ConfigError, match="non chiffrée"):
+        build_provider(
+            LlmProvider(
+                kind="openai_compat",
+                base_url="http://192.168.1.20:8000/v1",
+                model="m",
+                api_key_env="MY_VLLM_KEY",
+            ),
+            s,
+        )
+    ok = build_provider(
+        LlmProvider(
+            kind="openai_compat",
+            base_url="http://localhost:8000/v1",
+            model="m",
+            api_key_env="MY_VLLM_KEY",
+        ),
+        s,
+    )
+    assert ok._client.headers["authorization"] == "Bearer k"
+
+
+def test_vision_json_repair_does_not_resend_images(tmp_path):
+    from PIL import Image
+
+    img = tmp_path / "a.png"
+    Image.new("RGB", (8, 8)).save(img)
+    seen = []
+
+    class Two(LocalLLM):
+        def _chat_maybe_json(self, messages, images):
+            seen.append(bool(images))
+            return "pas du json" if len(seen) == 1 else '{"ok": true}'
+
+    llm = Two("http://localhost:1/v1", "m", vision_model="v")
+    assert llm.chat_json(msgs(), Out, images=[img]).ok is True
+    assert seen == [True, False]
+
+
+def test_pick_thumbnails_no_llm_never_builds_a_client(monkeypatch, tmp_path):
+    from minavio.config import load_profile
+    from minavio.core.models import ThumbnailCandidate
+    from minavio.llm import client as client_mod
+    from minavio.llm.vision import pick_thumbnails
+
+    def boom(*a, **k):
+        raise AssertionError("aucun client LLM ne doit être construit avec use_llm=False")
+
+    monkeypatch.setattr(client_mod.LocalLLM, "from_settings", classmethod(boom))
+    cands = [
+        ThumbnailCandidate(source=Path("a.mp4"), t=i, image=tmp_path / f"{i}.png", score=0.5)
+        for i in range(3)
+    ]
+    assert pick_thumbnails(cands, load_profile("minivitch"), use_llm=False)

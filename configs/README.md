@@ -168,9 +168,15 @@ llm:
 | `anthropic` | `ANTHROPIC_API_KEY` | `effort: low\|medium\|high` ; payant |
 | `google` | `GEMINI_API_KEY` | Gemini ; payant au-delà du quota gratuit |
 | `github` | `GITHUB_TOKEN` | GitHub Models (abonnement Copilot) |
-| `openai_compat` | `OPENAI_API_KEY` | `base_url` et `model` obligatoires |
+| `openai_compat` | aucune par défaut | `base_url` et `model` obligatoires ; clé seulement via `api_key_env` explicite, refusée en `http://` hors localhost |
 
 Autres champs : `model`, `vision_model`, `base_url`, `api_key_env` (autre nom de variable).
+
+**Images (miniatures) et confidentialité.** Le local utilise `qwen3-vl:8b` par défaut
+(`ollama pull qwen3-vl:8b`). Un fournisseur cloud ne reçoit **jamais d'images** sauf si tu lui
+donnes un `vision_model`, par ex. `{kind: anthropic, vision_model: claude-opus-5-5}`. La chaîne est
+toujours essayée dans l'ordre configuré : un échec ponctuel du local ne bascule pas le reste du job
+sur le cloud. `--no-llm` (ou la case décochée dans l'UI) n'envoie rien à aucun LLM.
 **Les clés ne sont jamais dans le YAML.** Claude, Gemini et les API payantes envoient les
 transcripts et images au fournisseur : coût et confidentialité à votre charge.
 

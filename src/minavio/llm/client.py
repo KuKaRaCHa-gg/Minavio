@@ -89,7 +89,9 @@ class BaseLLM:
         msgs = list(messages)
         last_error: Exception | None = None
         for attempt in range(2):
-            raw = self._chat_maybe_json(msgs, images)
+            # La réparation (2e essai) ne renvoie pas les images : le modèle corrige son JSON
+            # à partir de sa réponse, inutile de repayer l'envoi des images.
+            raw = self._chat_maybe_json(msgs, images if attempt == 0 else None)
             try:
                 return schema.model_validate(extract_json(raw))
             except (ValueError, ValidationError) as exc:

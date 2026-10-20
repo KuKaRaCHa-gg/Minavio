@@ -25,7 +25,8 @@ class AnthropicLLM(BaseLLM):
         context_budget_tokens: int = DEFAULT_CONTEXT_BUDGET,
     ) -> None:
         self.model = model
-        self.vision_model = vision_model or model
+        # None = pas de vision : les images ne partent chez Anthropic que si c'est demandé.
+        self.vision_model = vision_model
         self.api_key = api_key
         self.effort = effort or "low"
         self.name = f"Claude {model}"

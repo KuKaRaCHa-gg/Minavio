@@ -27,7 +27,8 @@ log = logging.getLogger(__name__)
 
 YOUTUBE_MAX_BYTES = 2 * 1024 * 1024
 _MAX_SIDE = 2560  # côté max des images inlinées (suffisant pour du 1920x1080)
-_TIMEOUT_S = 300
+_TIMEOUT_S = 120  # un still prend quelques secondes ; au-delà, Chromium est bloqué
+_remotion_broken = False  # après un échec, les miniatures suivantes passent par Pillow
 INK = (0, 0, 0)
 BG = (16, 16, 28)
 
@@ -124,6 +125,10 @@ def _render_remotion(props: dict[str, Any], out: Path) -> None:
             timeout=_TIMEOUT_S,
             check=False,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise MotionUnavailableError(f"Remotion n'a pas répondu en {_TIMEOUT_S} s") from exc
+    except OSError as exc:  # npx présent mais non exécutable, etc.
+        raise MotionUnavailableError(f"Remotion non lançable : {exc}") from exc
     finally:
         props_file.unlink(missing_ok=True)
     if proc.returncode != 0 or not out.exists():
@@ -561,11 +566,13 @@ def render_thumbnail(
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     rendered = False
-    if render.remotion_available():
+    global _remotion_broken
+    if render.remotion_available() and not _remotion_broken:
         try:
             _render_remotion(build_props(choice, fmt, theme, badge, kills, highlight), out)
             rendered = True
         except MotionUnavailableError as exc:
+            _remotion_broken = True
             log.warning("Remotion indisponible pour la miniature, repli Pillow : %s", exc)
     else:
         log.info("Node/Remotion absent : miniature composée avec Pillow.")

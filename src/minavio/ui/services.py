@@ -482,7 +482,6 @@ DEFAULT_KEY_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
     "google": "GEMINI_API_KEY",
     "github": "GITHUB_TOKEN",
-    "openai_compat": "OPENAI_API_KEY",
 }
 KEY_LABELS = {
     "ANTHROPIC_API_KEY": "Anthropic (Claude)",

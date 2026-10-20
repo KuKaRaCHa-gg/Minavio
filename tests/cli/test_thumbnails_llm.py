@@ -35,7 +35,7 @@ class ThumbFakes:
                 ThumbnailCandidate(source=src, t=2.0, image=img, score=0.9, signals={"kills": 3.0})
             ]
 
-        def pick(candidates, profile, copy=None, llm=None):
+        def pick(candidates, profile, copy=None, llm=None, use_llm=True):
             self.calls.append("pick")
             self.picked.append(list(profile.thumbnails.layouts))
             return [

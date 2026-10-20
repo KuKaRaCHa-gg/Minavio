@@ -230,13 +230,18 @@ def pick_thumbnails(
     profile: ChannelProfile,
     copy: dict | None = None,
     llm: Any = None,
+    use_llm: bool = True,
 ) -> list[ThumbnailChoice]:
-    """`profile.thumbnails.count` compositions variées (hero / split / collage)."""
+    """`profile.thumbnails.count` compositions variées (hero / split / collage).
+
+    `use_llm=False` (`--no-llm`, case décochée dans l'UI) : aucune image n'est envoyée à un LLM,
+    même si un client est disponible — choix heuristique uniquement.
+    """
     if not candidates:
         return []
     cfg = profile.thumbnails
     top = sorted(candidates, key=lambda c: c.score, reverse=True)[:MAX_VISION_CANDIDATES]
-    if cfg.use_vision_llm and profile.llm.enabled:
+    if use_llm and cfg.use_vision_llm and profile.llm.enabled:
         try:
             if llm is None:
                 from minavio.llm.client import LocalLLM
