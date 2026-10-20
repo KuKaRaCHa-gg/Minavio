@@ -232,3 +232,109 @@ def test_captions_follow_autocut(profile):
     assert [(c.start, c.end) for c in tl.clips] == [(10, 11.8), (13.9, 15)]
     assert [w.text for cap in tl.captions for w in cap.words] == ["un", "deux", "trois"]
     assert tl.captions[-1].words[0].start == pytest.approx(1.8 + 0.1)  # décalé du 1er clip
+
+
+# --- countdown / cold open ---
+
+
+def _opts(profile, order="chronological", cold=None, **editing):
+    p = prof(profile, pre_roll_s=0, post_roll_s=0, min_clip_s=2, max_clip_s=60, **editing)
+    ed = p.editing.model_copy(update={"order": order})
+    if cold:
+        co = ed.cold_open.model_copy(update={"enabled": True, "duration_s": cold})
+        ed = ed.model_copy(update={"cold_open": co})
+    return p.model_copy(update={"editing": ed})
+
+
+def test_countdown_orders_by_ascending_score(profile):
+    p = _opts(profile, "countdown", target_duration_s=100)
+    hs = [
+        hl(0, 4, 0.5, "b"),
+        hl(10, 14, 0.9, "best"),
+        hl(20, 24, 0.2, "worst"),
+        hl(30, 34, 0.7, "c"),
+    ]
+    tl = plan_timeline(hs, p)
+    assert [c.highlight_label for c in tl.clips] == ["worst", "b", "c", "best"]
+
+
+def test_chronological_default_unchanged(profile):
+    p = _opts(profile, target_duration_s=100)
+    tl = plan_timeline([hl(10, 14, 0.9), hl(0, 4, 0.2)], p)
+    assert [c.start for c in tl.clips] == [0, 10]
+
+
+def test_cold_open_first_clip_centered_on_peak(profile):
+    p = _opts(profile, cold=2.0, target_duration_s=100)
+    tl = plan_timeline([hl(0, 4, 0.3, "a"), hl(10, 20, 0.9, "best")], p)
+    assert tl.cold_open_clips == 1
+    c = tl.clips[0]
+    assert c.highlight_label == "best" and c.zoom == 1.0
+    assert (c.start, c.end) == pytest.approx((14.0, 16.0))
+    assert [x.highlight_label for x in tl.clips[1:]] == ["a", "best"]
+
+
+def test_cold_open_uses_signal_peak_and_stays_in_window(profile):
+    p = _opts(profile, cold=2.0, target_duration_s=100)
+    h = hl(10, 20, 0.9).model_copy(update={"signals": {"peak_t": 19.5}})
+    c = plan_timeline([h], p).clips[0]
+    assert (c.start, c.end) == pytest.approx((18.0, 20.0))  # borné à la fenêtre
+    h = hl(10, 20, 0.9).model_copy(update={"signals": {"peak_t": 50.0}})  # hors highlight : ignoré
+    assert plan_timeline([h], p).clips[0].start == pytest.approx(14.0)
+
+
+def test_cold_open_counts_in_target_and_no_captions(profile):
+    p = _opts(profile, cold=2.5, target_duration_s=10)
+    seg = TranscriptSegment(start=14.0, end=15.5, text="cold", source=SRC)
+    seg2 = TranscriptSegment(start=11.0, end=12.0, text="real", source=SRC)
+    tl = plan_timeline([hl(10, 18, 0.9)], p, transcript=[seg, seg2])
+    assert tl.duration == pytest.approx(10.0)
+    # les captions démarrent au premier vrai moment et suivent le décalage du cold open
+    assert all(s.start >= 2.5 - 1e-6 for s in tl.captions)
+    caps = sorted(tl.captions, key=lambda s: s.start)
+    assert [s.text for s in caps] == ["real", "cold"]
+    assert caps[0].start == pytest.approx(2.5 + 1.0)
+
+
+def test_cold_open_moments(profile):
+    p = _opts(profile, cold=2.0, target_duration_s=100)
+    tl = plan_timeline([hl(10, 14, 0.9, "best")], p)
+    ms = tl.moments()
+    assert len(ms) == 2
+    assert ms[0].cold_open and not ms[1].cold_open
+    assert (ms[0].first_clip, ms[0].last_clip) == (0, 0) and ms[1].first_clip == 1
+    assert ms[1].start == pytest.approx(2.0)
+
+
+def test_cold_open_beats_in_timeline_time(profile):
+    p = _opts(profile, cold=2.0, target_duration_s=100)
+    p = p.model_copy(update={"audio": p.audio.model_copy(update={"beat_sync": True})})
+    tl = plan_timeline([hl(10, 14.1, 0.9)], p, beats=[1.0, 6.0, 500.0])
+    assert tl.beats == [1.0, 6.0]
+    assert tl.clips[1].end - tl.clips[1].start == pytest.approx(4.0)  # fin snappée sur 6.0 - 2.0
+
+
+def test_countdown_cold_open_autocut_combined(profile):
+    p = _ac(profile, punch_in=1.1, target_duration_s=100, order="countdown")
+    co = p.editing.cold_open.model_copy(update={"enabled": True, "duration_s": 2})
+    p = p.model_copy(update={"editing": p.editing.model_copy(update={"cold_open": co})})
+    ks = {SRC: [(0, 12), (14, 17), (18, 40)]}
+    hs = [hl(30, 36, 0.4, "low"), hl(10, 20, 0.9, "best")]
+    tl = plan_timeline(hs, p, keep_spans=ks)
+    assert tl.cold_open_clips == 1
+    cold = tl.clips[0]
+    assert cold.highlight_label == "best" and cold.zoom == 1.0
+    # plage contiguë gardée : le pic (15) est dans (14, 17)
+    assert cold.start >= 14 and cold.end <= 17 and cold.duration == pytest.approx(2.0)
+    rest = tl.clips[1:]
+    assert [c.highlight_label for c in rest] == ["low", "best", "best", "best"]
+    assert [(c.start, c.end) for c in rest[1:]] == [(10, 12), (14, 17), (18, 20)]
+    assert [c.zoom for c in rest[1:]] == [1.0, 1.1, 1.0]
+    ms = tl.moments()
+    assert [m.label for m in ms] == ["best", "low", "best"] and ms[0].cold_open
+
+
+def test_cold_open_skipped_when_target_too_short(profile):
+    p = _opts(profile, cold=2.0, target_duration_s=3)
+    tl = plan_timeline([hl(10, 20, 0.9)], p)
+    assert tl.cold_open_clips == 0

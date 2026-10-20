@@ -14,14 +14,25 @@ log = logging.getLogger("minavio.edit")
 # Tolérance (s) pour aligner une coupe sur le beat le plus proche, selon le pacing.
 BEAT_TOLERANCE_S = {"calm": 0.25, "dynamic": 0.2, "hyper": 0.15}
 _MIN_CAPTION_S = 0.05
+# Clés de `Highlight.signals` = instant du pic (s source) ; sinon centre du highlight.
+PEAK_SIGNAL_KEYS = ("peak_t", "peak_time", "peak_s", "t_peak")
 MIN_FRAGMENT_S = 0.25  # sous-clips plus courts que ça (après autocut) : fusionnés au voisin
 
 KeepSpans = dict[Path, list[tuple[float, float]]]
 
 
 class _Window:
-    def __init__(self, source: Path, start: float, end: float, score: float, label: str):
+    def __init__(
+        self,
+        source: Path,
+        start: float,
+        end: float,
+        score: float,
+        label: str,
+        peak: float | None = None,
+    ):
         self.source, self.start, self.end, self.score, self.label = source, start, end, score, label
+        self.peak = (start + end) / 2 if peak is None else peak
 
     @property
     def duration(self) -> float:
@@ -37,6 +48,15 @@ def _fit(w: _Window, lo: float, hi: float, center: float) -> None:
         w.end = w.start + lo
 
 
+def _peak(h: Highlight) -> float:
+    """Instant du pic : signal temporel exploitable (dans le highlight), sinon son centre."""
+    for key in PEAK_SIGNAL_KEYS:
+        t = h.signals.get(key)
+        if t is not None and h.start <= t <= h.end:
+            return float(t)
+    return (h.start + h.end) / 2
+
+
 def _windows(highlights: list[Highlight], profile: ChannelProfile) -> list[_Window]:
     ed = profile.editing
     raw = [
@@ -46,6 +66,7 @@ def _windows(highlights: list[Highlight], profile: ChannelProfile) -> list[_Wind
             h.end + ed.post_roll_s,
             h.score,
             h.label,
+            _peak(h),
         )
         for h in highlights
     ]
@@ -54,7 +75,7 @@ def _windows(highlights: list[Highlight], profile: ChannelProfile) -> list[_Wind
         last = merged[-1] if merged else None
         if last and last.source == w.source and w.start < last.end:
             if w.score > last.score:
-                last.label = w.label
+                last.label, last.peak = w.label, w.peak
             last.end = max(last.end, w.end)
             last.score = max(last.score, w.score)
         else:
@@ -123,12 +144,16 @@ def _snap(
     beats: list[float],
     profile: ChannelProfile,
     keep_spans: KeepSpans | None = None,
+    t0: float = 0.0,
 ) -> None:
-    """Aligne chaque coupe de fin sur le beat le plus proche (dans la tolérance du pacing)."""
+    """Aligne chaque coupe de fin sur le beat le plus proche (dans la tolérance du pacing).
+
+    `t0` : durée déjà écoulée avant le premier clip (cold open), en temps timeline.
+    """
     ed = profile.editing
     tol = BEAT_TOLERANCE_S[ed.pacing]
     sorted_beats = sorted(beats)
-    t = 0.0
+    t = t0
     for w in windows:
         eff = _effective(w, keep_spans)
         cut = t + eff
@@ -147,10 +172,10 @@ def _snap(
 
 
 def _remap_captions(
-    clips: list[Clip], transcript: list[TranscriptSegment]
+    clips: list[Clip], transcript: list[TranscriptSegment], start_offset: float = 0.0
 ) -> list[TranscriptSegment]:
     out: list[TranscriptSegment] = []
-    offset = 0.0
+    offset = start_offset
     # segment sans mots : émis uniquement sur le clip de plus grand recouvrement
     best: dict[int, int] = {}
     for si, seg in enumerate(transcript):
@@ -200,6 +225,26 @@ def _remap_captions(
     return out
 
 
+def _cold_open_clip(
+    w: _Window, duration: float, keep_spans: KeepSpans | None
+) -> tuple[float, float] | None:
+    """Plage source de `duration` s centrée sur le pic de `w`, dans les bornes de la fenêtre.
+
+    Avec autocut : contenue dans une plage gardée contiguë (celle du pic, sinon la plus proche) ;
+    plus courte que `duration` si cette plage l'est. None si rien n'est gardé.
+    """
+    spans = _fragments(w, keep_spans)
+    if not spans:
+        return None
+    span = min(
+        spans, key=lambda f: 0.0 if f[0] <= w.peak <= f[1] else min(abs(w.peak - x) for x in f)
+    )
+    lo, hi = span
+    dur = min(duration, hi - lo)
+    start = min(max(w.peak - dur / 2, lo), hi - dur)
+    return start, start + dur
+
+
 def plan_timeline(
     highlights: list[Highlight],
     profile: ChannelProfile,
@@ -212,29 +257,58 @@ def plan_timeline(
 
     `keep_spans` (autocut) : chaque fenêtre est éclatée en sous-clips sur les intervalles gardés ;
     seuls les bords externes sont snappés sur les beats.
+    `editing.order == "countdown"` : moments du moins bon au meilleur (score croissant).
+    `editing.cold_open.enabled` : un clip centré sur le pic du meilleur moment ouvre la timeline
+    (sans zoom, sans captions, non éclaté) ; il compte dans la durée cible.
     """
-    windows = _select(_windows(highlights, profile), profile.editing.target_duration_s, keep_spans)
-    if beats and profile.audio.beat_sync:
-        _snap(windows, beats, profile, keep_spans)
+    ed = profile.editing
+    target = ed.target_duration_s
+    cold_cfg = ed.cold_open if ed.cold_open.enabled else None
+    if cold_cfg and target - cold_cfg.duration_s < ed.min_clip_s:
+        log.warning(
+            "cold_open ignoré : durée cible %.1fs trop courte pour %.1fs de cold open + un moment.",
+            target,
+            cold_cfg.duration_s,
+        )
+        cold_cfg = None
+    all_windows = _windows(highlights, profile)
+    windows = _select(all_windows, target - (cold_cfg.duration_s if cold_cfg else 0), keep_spans)
 
-    punch = profile.editing.autocut.punch_in
-    clips: list[Clip] = []
+    cold: Clip | None = None
+    if cold_cfg and windows:
+        best = max(windows, key=lambda x: x.score)  # à score égal : le premier chronologiquement
+        span = _cold_open_clip(best, cold_cfg.duration_s, keep_spans)
+        if span:
+            cold = Clip(source=best.source, start=span[0], end=span[1], highlight_label=best.label)
+    cold_dur = cold.duration / cold.speed if cold else 0.0
+
+    if ed.order == "countdown":
+        windows.sort(key=lambda x: x.score)  # tri stable : égalité = ordre chronologique
+    if beats and profile.audio.beat_sync:
+        _snap(windows, beats, profile, keep_spans, t0=cold_dur)
+
+    punch = ed.autocut.punch_in
+    clips: list[Clip] = [cold] if cold else []
     for w in windows:
         for k, (s, e) in enumerate(_fragments(w, keep_spans)):
             zoom = punch if punch > 1 and k % 2 == 1 else 1.0
             clips.append(Clip(source=w.source, start=s, end=e, highlight_label=w.label, zoom=zoom))
+    n_real = len(clips) - (1 if cold else 0)
     timeline = Timeline(
         profile_id=profile.id,
         fps=profile.outputs[0].fps,
         clips=clips,
+        cold_open_clips=1 if cold else 0,
         music=music,
         beats=[b for b in sorted(beats or []) if 0 <= b <= sum(c.duration for c in clips)],
     )
     if transcript:
-        if len({c.source for c in clips}) > 1 and any(s.source is None for s in transcript):
+        if len({c.source for c in clips[len(clips) - n_real :]}) > 1 and any(
+            s.source is None for s in transcript
+        ):
             log.warning(
                 "Transcript sans champ 'source' et plusieurs sources : captions appliquées "
                 "à tous les clips par temps source (risque d'incohérence)."
             )
-        timeline.captions = _remap_captions(clips, transcript)
+        timeline.captions = _remap_captions(clips[len(clips) - n_real :], transcript, cold_dur)
     return timeline
