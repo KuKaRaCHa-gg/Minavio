@@ -94,6 +94,69 @@ Pour les fichiers `.txt`, une ligne par message au format `[H:MM:SS] user: messa
 
 Exemple : pour `/videos/vod_2026-10-01.mp4`, le log est `/videos/vod_2026-10-01.chat.json`.
 
+## `audio.sfx` : effets sonores
+
+Désactivé par défaut. Avec `enabled: true`, l'étape `sfx` (après `overlays`) pose des effets
+sonores locaux (banque CC0 embarquée, ou `library_dir`) sur les événements du montage. Résultat :
+`work/<job_id>/sfx.json`.
+
+| Clé | Rôle |
+| :--- | :--- |
+| `enabled` | active l'étape `sfx` |
+| `library_dir` | dossier de sons à la place de la banque embarquée |
+| `gain_db` | gain des effets (dB, `<= 12`) |
+| `on_cut` | son entre deux moments (`whoosh`), `null` = aucun |
+| `on_kill` / `on_multi_kill` | son d'un kill (`hit`) / multi-kill (`boom`) |
+| `on_cold_open` | son du rewind de l'ouverture (`rewind`) |
+
+## `editing.cold_open` et `editing.order`
+
+- `cold_open: { enabled, duration_s }` : la vidéo s'ouvre sur le pic du meilleur moment (durée
+  `duration_s`, `0.5` à `8`), puis le montage normal reprend. Le titre (hook) se place alors au
+  début du premier vrai moment, pas à t=0. Avec le template `rewind`, un effet rewind joue sur la
+  dernière seconde de l'ouverture.
+- `order` : `chronological` (ordre des sources, défaut) ou `countdown` (du moins bon au meilleur,
+  pour un Top N ; le template `rank_card` affiche N…1 au début de chaque moment).
+
+## Motion par moment
+
+Ces templates ne s'affichent que s'ils sont listés dans `motion.templates` :
+
+| Template | Props | Quand |
+| :--- | :--- | :--- |
+| `kill_counter` | `kills`, `label?` | 0,3 s après le début d'un moment `kill` (1) ou `multi_kill` (2, ou `signals.kills` du highlight) ; pas sur le cold open |
+| `rank_card` | `rank`, `total`, `label?` | début de chaque vrai moment si `editing.order: countdown` |
+| `rewind` | `text?` | dernière seconde du cold open |
+
+## `shorts` : un short par meilleur moment
+
+Bloc optionnel au niveau du profil. Pour les `per_highlight` meilleurs highlights (par score), le
+pipeline monte une timeline dédiée (durée `max_duration_s`, sans cold open, ordre chronologique,
+sous-titres et `kill_counter`, sans titre ni popups) et la rend dans le format `format`.
+
+| Clé | Rôle |
+| :--- | :--- |
+| `per_highlight` | nombre de shorts (`0` = désactivé, `<= 10`) ; surchargeable par `minavio run --shorts N` |
+| `max_duration_s` | durée cible d'un short (`> 5`, `<= 60`) |
+| `format` | nom d'un `outputs[]` **9:16** du profil (erreur claire sinon, avant les étapes longues) |
+
+Fichiers : `out/<profil>/<job_id>_short<i>.mp4`. Un short qui échoue donne un warning et le job continue.
+
+## `chapters` : chapitres YouTube
+
+`chapters: true` lance l'étape `chapters` (LLM local, après le montage). Elle écrit
+`out/<profil>/<job_id>_chapters.txt` (format prêt à coller dans une description) et
+`work/<job_id>/chapters.json`. Désactivable par `minavio run --no-chapters`. Ignorée avec `--no-llm`.
+Les chemins de ces fichiers annexes sont affichés après les vidéos.
+
+## Profils livrés
+
+| Profil | Particularités |
+| :--- | :--- |
+| `minivitch` | sfx, cold open 2,5 s, chapitres, 3 shorts par moment, `kill_counter` et `rewind` |
+| `minivitch_top10` | « Minivitch — Top 10 » : copie de minivitch en `order: countdown`, `max_highlights: 10`, `rank_card`, durée cible 420 s, shorts désactivés |
+| `bytetricks`, `thelostchat` | inchangés (sfx désactivé, pas de chapitres ni de shorts) |
+
 ## Environnement
 
 | Variable | Surcharge |
