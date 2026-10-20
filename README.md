@@ -21,7 +21,23 @@ export MINAVIO_LLM_MODEL=qwen3:30b-a3b                  # le nom de TON modèle
 uv run minavio llm ping minivitch
 ```
 
-## Utilisation
+## Interface graphique
+
+```bash
+uv sync --all-extras          # inclut l'interface (extra `ui`, Gradio)
+uv run minavio ui             # ouvre http://127.0.0.1:7860 dans le navigateur
+```
+
+Sous Windows : double-clic sur `scripts/minavio-ui.bat`. L'interface n'écoute que sur ta machine.
+
+| Onglet | Rôle |
+| :--- | :--- |
+| 🎬 Montage | chaîne, dossier de clips, musique, formats, Shorts, Qwen/chapitres ; progression par étape, annulation, vidéos produites, titre/description/chapitres |
+| 🎯 Captures de jeu | upload d'une capture d'écran, recadrage de l'élément (marqueur de kill…), enregistrement au bon endroit |
+| ⚙️ Réglages | édition des profils YAML, vérifiés avant enregistrement (`.bak` conservé) |
+| 🩺 Système | FFmpeg, Node/Remotion, modules installés, GPU, test de connexion au Qwen |
+
+## Utilisation en ligne de commande
 
 ```bash
 # Un dossier de clips Outplayed → out/minivitch/<job>_youtube.mp4 et <job>_shorts.mp4
