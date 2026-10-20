@@ -93,6 +93,7 @@ def profile() -> ChannelProfile:
     # vérifient le comportement de base ; chaque test d'option l'active explicitement.
     p = load_profile("minivitch")
     p.editing.cold_open.enabled = False
+    p.editing.slowmo.enabled = False
     p.audio.sfx.enabled = False
     p.shorts.per_highlight = 0
     p.chapters = False
