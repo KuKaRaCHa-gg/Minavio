@@ -85,3 +85,21 @@ Réponds UNIQUEMENT par un objet JSON, sans texte autour :
 ```json
 {"items": [{"layout": "hero", "images": [3], "text": "SQUAD WIPED", "reason": "..."}]}
 ```
+
+<!-- section:vision_scan -->
+## Tâche : juger visuellement un moment (3 images : t-1 s, t, t+1 s)
+
+Tu vois 3 captures consécutives. Note UNIQUEMENT ce qui est visible. Menu, lobby, loot, écran de chargement ou inventaire = excitement 0-2.
+Indices Apex : kill feed qui défile en haut à droite, compteur d'escouades restantes, bouclier ennemi cassé (flash), écran « CHAMPION » / « VICTOIRE », bannière « KNOCKED » / « ELIMINATED », beaucoup de tirs ou de capacités à l'écran, joueur à très peu de PV face à plusieurs ennemis (clutch). Un chaos multi-équipes ou un fail spectaculaire compte aussi.
+
+Réponds UNIQUEMENT par un objet JSON, sans texte autour :
+
+```json
+{"excitement": 7, "events": ["clutch"], "kills_visible": 1, "reason": "phrase courte en français"}
+```
+
+- `excitement` : nombre de 0 à 10 (0 = rien, 5 = correct, 8+ = à garder absolument).
+- `events` : liste parmi kill, multi_kill, knock, clutch, win, fail, funny, chaos, none. Le plus
+  important en premier ; `["none"]` si rien de notable.
+- `kills_visible` : nombre de kills réellement lisibles sur les images (0 si incertain). N'invente rien.
+- `reason` : une phrase courte en français décrivant ce que tu VOIS.
