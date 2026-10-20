@@ -1,0 +1,40 @@
+id: helldivers_2
+name: Helldivers 2
+genre: coop_pve
+modes: [coop, pve]
+combo_window_s: 7.0
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    death:
+      - killed in action
+      - mort au combat
+      - diver down
+      - helldiver à terre
+    team_wipe:
+      - squad lost
+      - escouade éliminée
+      - reinforcement budget depleted
+      - budget de renfort épuisé
+    extraction:
+      - extraction available
+      - extraction arriving
+      - extraction disponible
+      - extraction en approche
+    victory:
+      - mission accomplished
+      - mission accomplie
+      - operation successful
+      - opération réussie
+    friendly_fire:
+      - killed by teammate
+      - tué par un coéquipier
+      - friendly fire
+      - tir allié
+    funny:
+      - for democracy
+      - pour la démocratie
+      # Texte incertain selon VO/VF et contexte narratif.
+      - accidental heroics
+ui_templates: []

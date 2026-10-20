@@ -1,0 +1,40 @@
+id: deep_rock_galactic
+name: Deep Rock Galactic
+genre: coop_pve
+modes: [coop, pve]
+combo_window_s: 6.5
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    death:
+      - dwarf down
+      - nain à terre
+      - downed
+      - à terre
+    team_wipe:
+      - team down
+      - équipe au tapis
+      - all dwarves down
+      - tous les nains à terre
+    extraction:
+      - drop pod departing
+      - drop pod en partance
+      - get to the drop pod
+      - rejoignez le drop pod
+    victory:
+      - mission completed
+      - mission terminée
+      - objective completed
+      - objectif terminé
+    friendly_fire:
+      - friendly fire is not friendly
+      # Texte incertain : doublage VF variable.
+      - tir ami
+      - teammate downed
+      - coéquipier à terre
+    funny:
+      - rock and stone
+      - roc et pierre
+      - mushroom
+ui_templates: []
