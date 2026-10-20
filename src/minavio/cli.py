@@ -322,6 +322,49 @@ def ui(
     launch(port=port, open_browser=not no_browser, out_dir=out)
 
 
+@app.command("watch")
+def watch_cmd(
+    profile_id: Annotated[str, typer.Argument(metavar="PROFILE", help="Id du profil de chaîne.")],
+    folder: Annotated[Path, typer.Argument(help="Dossier surveillé (ex. Outplayed).")],
+    stable: Annotated[
+        float, typer.Option(help="Secondes sans changement avant qu'un clip soit stable.")
+    ] = 30.0,
+    batch: Annotated[
+        float, typer.Option(help="Secondes sans nouveau clip avant de lancer le lot.")
+    ] = 600.0,
+    music: Annotated[Path | None, typer.Option(help="Fichier musique passé au montage.")] = None,
+    once: Annotated[
+        bool, typer.Option("--once", help="Scanne, traite les clips stables, puis quitte.")
+    ] = False,
+    verbose: Verbose = False,
+) -> None:
+    """Ingestion automatique : surveille FOLDER et lance le montage par lots de clips stables.
+
+    Ne publie jamais : la publication YouTube reste manuelle (`minavio publish`).
+    Un lot en échec est marqué « failed » dans work/.watch_<profile>.json et n'est pas relancé
+    automatiquement. Ctrl+C arrête le démon.
+    """
+    _setup_logging(verbose)
+    if not folder.is_dir():
+        raise _fail(
+            MinavioError(f"Dossier introuvable : {folder}. Indique un dossier existant de clips."),
+            verbose,
+        )
+    from minavio.watch import Watcher, serve
+
+    try:
+        load_profile(profile_id)
+        watcher = Watcher(profile_id, folder, stable_s=stable, batch_s=batch, music=music)
+    except MinavioError as e:
+        raise _fail(e, verbose) from e
+    if once:
+        watcher.scan()
+        watcher.tick()
+        watcher.flush()
+        return
+    serve(watcher)
+
+
 @publish.command("auth")
 def publish_auth(
     client_secret: Annotated[
