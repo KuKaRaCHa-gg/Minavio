@@ -149,10 +149,16 @@ def build_command(
     profile: ChannelProfile,
     overlay_files: dict[int, Path] | None = None,
     temps: list[Path] | None = None,
+    *,
+    video_codec: str | None = None,
+    slowmo_mode: str | None = None,
+    threads: int | None = None,
 ) -> list[str]:
     """Construit les arguments ffmpeg (sans le binaire) ; sonde les sources.
 
     `temps` : reçoit les fichiers intermédiaires créés (vidéos RIFE) à supprimer après le rendu.
+    `video_codec` : encodeur vidéo (défaut libx264) ; `slowmo_mode` : "minterpolate" ou "none"
+    remplace le mode de ralenti résolu (rife/auto) ; `threads` : threads de l'encodeur.
     """
     clips = fit_clips(timeline.clips, fmt.max_duration_s)
     if not clips:
@@ -161,11 +167,16 @@ def build_command(
 
     infos = {s: ffmpeg.probe(s) for s in {c.source for c in clips}}
     slowmo = profile.editing.slowmo
-    interp_mode = (
-        interpolate.resolve_mode(slowmo.interpolation)
-        if any(c.interpolate for c in clips)
-        else "none"
-    )
+    if slowmo_mode is not None:
+        if slowmo_mode not in {"minterpolate", "none"}:
+            raise MinavioError(f"slowmo_mode invalide : {slowmo_mode!r} (minterpolate ou none)")
+        interp_mode = slowmo_mode
+    else:
+        interp_mode = (
+            interpolate.resolve_mode(slowmo.interpolation)
+            if any(c.interpolate for c in clips)
+            else "none"
+        )
     args: list[str] = []
     n_inputs = 0
     v_ins: list[int] = []
@@ -281,8 +292,14 @@ def build_command(
     )
 
     args += ["-filter_complex", ";".join(graph), "-map", "[vout]", "-map", "[aout]"]
-    args += ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p"]
+    codec = video_codec or "libx264"
+    args += ["-c:v", codec]
+    if codec == "libx264":
+        args += ["-preset", "medium", "-crf", "18"]
+    args += ["-pix_fmt", "yuv420p"]
     args += ["-r", str(fmt.fps), "-c:a", "aac", "-b:a", "192k", "-ar", str(SAMPLE_RATE)]
+    if threads:
+        args += ["-threads", str(threads)]
     args += ["-t", f"{total:.4f}", "-movflags", "+faststart", str(out)]
     return args
 
@@ -293,12 +310,27 @@ def render_timeline(
     out: Path,
     profile: ChannelProfile,
     overlay_files: dict[int, Path] | None = None,
+    *,
+    video_codec: str | None = None,
+    slowmo_mode: str | None = None,
+    threads: int | None = None,
 ) -> Path:
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     temps: list[Path] = []
     try:
-        ffmpeg.run(build_command(timeline, fmt, out, profile, overlay_files, temps))
+        args = build_command(
+            timeline,
+            fmt,
+            out,
+            profile,
+            overlay_files,
+            temps,
+            video_codec=video_codec,
+            slowmo_mode=slowmo_mode,
+            threads=threads,
+        )
+        ffmpeg.run(args)
     finally:
         for t in temps:
             t.unlink(missing_ok=True)

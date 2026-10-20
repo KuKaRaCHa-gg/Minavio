@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from minavio.config.schema import ChannelProfile, OutputFormat
+from minavio.core import healing
 from minavio.core.models import (
     REWIND_DURATION_S,
     Chapter,
@@ -59,7 +60,7 @@ from minavio.core.models import (
     Timeline,
     TranscriptSegment,
 )
-from minavio.errors import MinavioError
+from minavio.errors import FFmpegError, MinavioError
 
 log = logging.getLogger("minavio.pipeline")
 
@@ -88,10 +89,63 @@ _API = {
     "build_caption_overlays": "minavio.motion.captions:build_caption_overlays",
     "render_overlays": "minavio.motion.render:render_overlays",
     "render_timeline": "minavio.core.render:render_timeline",
+    "probe_source": "minavio.core.ffmpeg:probe",
+    "repair_source": "minavio.core.healing:repair_source",
     "extract_candidates": "minavio.core.thumbs:extract_candidates",
     "pick_thumbnails": "minavio.llm.vision:pick_thumbnails",
     "render_thumbnail": "minavio.motion.thumbnail:render_thumbnail",
 }
+
+
+# Réparation déterministe des rendus : catégorie d'erreur -> options successives (healing.json).
+_RENDER_LADDER: dict[str, list[dict[str, Any]]] = {
+    "gpu": [{"video_codec": "libx264"}],
+    "encoder": [{"video_codec": "libx264"}],
+    "oom": [
+        {"slowmo_mode": "minterpolate", "threads": 2},
+        {"slowmo_mode": "none", "threads": 1},
+    ],
+}
+
+
+def _render_healed(
+    render: Callable[..., Path], *, work: Path, label: str, warnings: list[str]
+) -> Path:
+    """`render(**overrides)` avec réparation déterministe, un avertissement par réparation."""
+    ladder = healing.ladder(_RENDER_LADDER)
+
+    def step(category: str) -> dict[str, Any] | None:
+        extra = ladder(category)
+        if extra:
+            detail = ", ".join(f"{k}={v}" for k, v in sorted(extra.items()))
+            warnings.append(f"{label} : erreur '{category}', nouveau rendu avec {detail}")
+        return extra
+
+    return healing.with_healing(render, steps=[step], log_path=work / "healing.json")
+
+
+def _healthy_sources(sources: list[Path], work: Path, warnings: list[str]) -> list[Path]:
+    """Sonde chaque source ; illisible -> remux/ré-encodage (`repair_source`), sinon écartée."""
+    kept: list[Path] = []
+    for src in sources:
+        try:
+            _api("probe_source")(src)
+            kept.append(src)
+            continue
+        except FFmpegError as err:
+            reason = str(err).splitlines()[0]
+        try:
+            fixed = Path(_api("repair_source")(src, work))
+        except FFmpegError:
+            warnings.append(f"Source écartée (illisible, réparation impossible) : {src} ({reason})")
+            continue
+        warnings.append(f"Source réparée (corrompue, remux) : {src} -> {fixed}")
+        kept.append(fixed)
+    if not kept:
+        raise MinavioError(
+            "Aucune source lisible : toutes les vidéos sont corrompues ou illisibles."
+        )
+    return kept
 
 
 def _api(name: str) -> Callable[..., Any]:
@@ -462,6 +516,7 @@ def run_job(
     log.info("job %s : %d source(s), formats %s", job_id, len(sources), [f.name for f in fmts])
     steps = _Steps(work, resume, warnings)
     result = JobResult(job_id=job_id, work_dir=work, warnings=warnings, dry_run=dry_run)
+    sources = _healthy_sources(sources, work, warnings)
     # collect est toujours rejouée (calcul du job_id) ; on persiste juste son résultat.
     (work / "collect.json").write_text(json.dumps([str(p) for p in sources], indent=2))
 
@@ -623,8 +678,13 @@ def run_job(
         )
         rendered = steps.run(
             f"render_{fmt.name}",
-            lambda fmt=fmt, out=out, files=files: _api("render_timeline")(
-                timeline, fmt, out, profile, overlay_files=files or None
+            lambda fmt=fmt, out=out, files=files: _render_healed(
+                lambda **ov: _api("render_timeline")(
+                    timeline, fmt, out, profile, overlay_files=files or None, **ov
+                ),
+                work=work,
+                label=f"render_{fmt.name}",
+                warnings=warnings,
             ),
             dump=lambda p: {"output": str(p)},
             load=lambda d: d["output"],
@@ -832,7 +892,14 @@ def _render_short(
     )
     rendered = steps.run(
         f"short{i}_render",
-        lambda: _api("render_timeline")(tl, fmt, out, profile, overlay_files=files or None),
+        lambda: _render_healed(
+            lambda **ov: _api("render_timeline")(
+                tl, fmt, out, profile, overlay_files=files or None, **ov
+            ),
+            work=work,
+            label=f"short{i}_render",
+            warnings=steps.warnings,
+        ),
         dump=lambda p: {"output": str(p)},
         load=lambda d: d["output"],
     )
