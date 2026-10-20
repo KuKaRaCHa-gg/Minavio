@@ -90,24 +90,78 @@ def games_list() -> None:
             raise typer.Exit(1) from e
 
 
+def ping_providers(llm_client, settings) -> list[tuple[str, bool, str]]:
+    """(nom, ok, détail) pour chaque fournisseur de la chaîne ; repli : le seul LLM local."""
+    providers = getattr(llm_client, "providers", None)
+    if callable(providers):
+        providers = providers()
+    if not providers:
+        providers = [llm_client]
+    rows = []
+    for i, p in enumerate(providers, 1):
+        name = str(getattr(p, "name", None) or f"{settings.model} @ {settings.base_url}")
+        try:
+            ok, detail = bool(p.ping()), ""
+        except Exception as e:  # clé absente, réseau… : raison affichée, jamais de valeur
+            ok, detail = False, str(e)
+        if not ok and not detail:
+            detail = "injoignable ou clé absente/refusée (voir `minavio llm keys`)"
+        rows.append((f"{i}. {name}", ok, detail))
+    return rows
+
+
 @llm.command("ping")
 def llm_ping(
     profile_id: Annotated[str | None, typer.Argument(help="Profil (défaut : le premier).")] = None,
     verbose: Verbose = False,
 ) -> None:
-    """Teste la connexion au serveur LLM local du profil."""
+    """Teste chaque fournisseur LLM de la chaîne du profil (une ligne par fournisseur)."""
     _setup_logging(verbose)
     try:
         profile = load_profile(profile_id or (list_profiles() or ["?"])[0])
         from minavio.llm.client import LocalLLM
 
-        ok = LocalLLM.from_settings(profile.llm).ping()
+        rows = ping_providers(LocalLLM.from_settings(profile.llm), profile.llm)
     except (MinavioError, ImportError) as e:
         raise _fail(e, verbose) from e
-    if not ok:
-        typer.secho(f"KO  {profile.llm.base_url} ({profile.llm.model})", fg="red", err=True)
+    for name, ok, detail in rows:
+        if ok:
+            typer.secho(f"ok  {name}", fg="green")
+        else:
+            typer.secho(f"KO  {name} : {detail}", fg="red", err=True)
+    if not any(ok for _, ok, _ in rows):
         raise typer.Exit(1)
-    typer.secho(f"ok  {profile.llm.base_url} ({profile.llm.model})", fg="green")
+
+
+@llm.command("keys")
+def llm_keys() -> None:
+    """État des clés d'API (env / fichier / absent), sans afficher de valeur."""
+    from minavio.config.secrets import KNOWN_KEYS, load_secrets, secret_status, secrets_path
+
+    load_secrets()
+    for name, state in secret_status(KNOWN_KEYS).items():
+        typer.echo(f"{name:<20} {state}")
+    typer.echo(f"Fichier de secrets : {secrets_path()}")
+
+
+@llm.command("set-key")
+def llm_set_key(
+    name: Annotated[str, typer.Argument(metavar="NOM", help="Ex. ANTHROPIC_API_KEY.")],
+    delete: Annotated[bool, typer.Option("--delete", help="Supprime la clé du fichier.")] = False,
+) -> None:
+    """Enregistre (saisie masquée) ou supprime une clé dans le fichier de secrets local."""
+    from minavio.config.secrets import delete_secret, mask, set_secret
+
+    try:
+        if delete:
+            gone = delete_secret(name)
+            typer.echo(f"{name} supprimée." if gone else f"{name} n'était pas enregistrée.")
+            return
+        value = typer.prompt(f"Valeur de {name}", hide_input=True)
+        set_secret(name, value)
+    except MinavioError as e:
+        raise _fail(e) from e
+    typer.secho(f"{name} enregistrée ({mask(value.strip())}).", fg="green")
 
 
 @app.command("run")
@@ -135,6 +189,9 @@ def run(
     no_chapters: Annotated[
         bool, typer.Option("--no-chapters", help="Ne génère pas les chapitres YouTube.")
     ] = False,
+    no_thumbnails: Annotated[
+        bool, typer.Option("--no-thumbnails", help="Ne génère pas les miniatures.")
+    ] = False,
     verbose: Verbose = False,
 ) -> None:
     """Détecte les moments forts, monte et rend les vidéos."""
@@ -153,6 +210,7 @@ def run(
             out_dir=out,
             shorts=shorts,
             chapters=not no_chapters,
+            thumbnails=not no_thumbnails,
         )
     except MinavioError as e:
         raise _fail(e, verbose) from e
@@ -164,6 +222,65 @@ def run(
         typer.echo(str(o))
     for x in result.extras:
         typer.echo(str(x))
+
+
+@app.command("thumbnails")
+def thumbnails_cmd(
+    profile_id: Annotated[str, typer.Argument(metavar="PROFILE", help="Id du profil de chaîne.")],
+    job_id: Annotated[str, typer.Argument(help="Job existant (dossier work/<job_id>).")],
+    text: Annotated[str | None, typer.Option("--text", help="Texte imposé (sinon le LLM).")] = None,
+    layout: Annotated[str | None, typer.Option("--layout", help="hero, split ou collage.")] = None,
+    no_llm: Annotated[bool, typer.Option("--no-llm", help="Choix heuristique.")] = False,
+    work: Annotated[Path, typer.Option("--work", help="Dossier work/.")] = Path("work"),
+    out: Annotated[Path, typer.Option("--out", help="Dossier de sortie.")] = Path("out"),
+    verbose: Verbose = False,
+) -> None:
+    """Régénère les miniatures d'un job existant (relit detect/rank/copy.json de work/)."""
+    _setup_logging(verbose)
+    if layout is not None and layout not in ("hero", "split", "collage"):
+        raise _fail(MinavioError(f"Layout '{layout}' inconnu : hero, split ou collage."), verbose)
+    from minavio.core.models import Highlight
+    from minavio.pipeline import _Steps, build_thumbnails
+
+    try:
+        profile = load_profile(profile_id)
+        wdir = work / job_id
+        if not wdir.is_dir():
+            raise MinavioError(
+                f"Job '{job_id}' introuvable ({wdir}). Lance d'abord `minavio run {profile_id} …` "
+                "ou vérifie --work."
+            )
+        hl_path = next(
+            (wdir / f for f in ("rank.json", "detect.json") if (wdir / f).exists()), None
+        )
+        if hl_path is None:
+            raise MinavioError(f"Ni rank.json ni detect.json dans {wdir} : relance `minavio run`.")
+        highlights = [Highlight.model_validate(x) for x in json.loads(hl_path.read_text("utf-8"))]
+        copy = None
+        if (wdir / "copy.json").exists():
+            copy = json.loads((wdir / "copy.json").read_text("utf-8"))
+        warnings: list[str] = []
+        steps = _Steps(wdir, False, warnings)
+        files = build_thumbnails(
+            steps,
+            profile,
+            job_id,
+            highlights,
+            copy,
+            work=wdir,
+            target=out / profile.id,
+            use_llm=profile.llm.enabled and not no_llm,
+            text=text,
+            layout=layout,
+        )
+    except (MinavioError, json.JSONDecodeError, ValueError) as e:
+        raise _fail(e, verbose) from e
+    for w in warnings:
+        typer.secho(f"Avertissement : {w}", fg="yellow", err=True)
+    if not files:
+        raise _fail(MinavioError("aucune miniature produite (voir les avertissements)"), verbose)
+    for f in files:
+        typer.echo(str(f))
 
 
 @app.command("ui")

@@ -33,9 +33,10 @@ Sous Windows : double-clic sur `scripts/minavio-ui.bat`. L'interface n'écoute q
 | Onglet | Rôle |
 | :--- | :--- |
 | 🎬 Montage | chaîne, dossier de clips, musique, formats, Shorts, Qwen/chapitres ; progression par étape, annulation, vidéos produites, titre/description/chapitres |
+| 🖼️ Miniatures | choix d'un job récent (`work/`), texte personnalisé et disposition (hero / split / collage), génération et téléchargement des PNG |
 | 🎯 Captures de jeu | upload d'une capture d'écran, recadrage de l'élément (marqueur de kill…), enregistrement au bon endroit |
 | ⚙️ Réglages | édition des profils YAML, vérifiés avant enregistrement (`.bak` conservé) |
-| 🩺 Système | FFmpeg, Node/Remotion, modules installés, GPU, test de connexion au Qwen |
+| 🩺 Système | FFmpeg, Node/Remotion, modules installés, GPU, test de chaque fournisseur LLM, gestion des clés d'API |
 
 ## Utilisation en ligne de commande
 
@@ -58,6 +59,34 @@ timeline, overlays…) : on peut l'inspecter, le corriger à la main et relancer
 | `MINAVIO_WHISPER_MODEL` | modèle faster-whisper (défaut `large-v3` sur CUDA, `small` sur CPU) |
 | `MINAVIO_BROWSER_EXECUTABLE` | Chromium à utiliser par Remotion (sinon il le télécharge) |
 | `MINAVIO_MOTION_DIR`, `MINAVIO_FONT` | projet Remotion / fonte du repli FFmpeg |
+
+## Miniatures
+
+Si `thumbnails.enabled` (profil), `minavio run` produit après les rendus des miniatures
+`out/<profil>/<job>_thumb<i>_<format>.png` (désactivable : `--no-thumbnails`). Pour les refaire
+depuis un job existant, avec un texte imposé si besoin :
+
+```bash
+uv run minavio thumbnails minivitch <job_id> --text "3 KILLS EN 5 SECONDES" --layout hero
+```
+
+## Fournisseurs LLM, coût et confidentialité
+
+Par défaut tout reste local (Qwen via Ollama). Un profil peut déclarer une chaîne `llm.providers`
+(local, Claude, Gemini, GitHub Models, API compatible OpenAI) essayée dans l'ordre, par exemple
+local d'abord et Claude en secours (voir `configs/README.md`).
+
+- **Les API cloud sont payantes** (Claude, Gemini, OpenAI) et **envoient vos transcripts et images
+  au fournisseur** : n'activez-les que si cela vous convient. GitHub Models (abonnement Copilot)
+  est limité (~8k tokens d'entrée, quelques requêtes/min) : à réserver au secours.
+- Les clés ne sont jamais dans les YAML : variables d'environnement ou fichier local
+  `~/.config/minavio/secrets.env` (`%APPDATA%\minavio\secrets.env` sous Windows, permissions 600).
+
+```bash
+uv run minavio llm set-key ANTHROPIC_API_KEY   # saisie masquée (aussi GEMINI_API_KEY, OPENAI_API_KEY, GITHUB_TOKEN)
+uv run minavio llm keys                        # état des clés, sans les valeurs
+uv run minavio llm ping minivitch              # teste chaque fournisseur de la chaîne
+```
 
 ## Pour aller plus loin
 

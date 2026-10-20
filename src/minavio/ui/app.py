@@ -1,6 +1,6 @@
 """Interface graphique locale (Gradio) : `minavio ui`.
 
-Quatre onglets : Montage, Captures de jeu, Réglages, Système. Toute la logique est dans
+Cinq onglets : Montage, Miniatures, Captures de jeu, Réglages, Système. Toute la logique est dans
 `minavio.ui.services` ; ce module ne fait que la mise en page et le câblage des événements.
 Le serveur n'écoute que sur 127.0.0.1 : rien n'est exposé sur le réseau.
 """
@@ -52,6 +52,7 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                     with gr.Row():
                         use_llm = gr.Checkbox(label="Qwen (titres, classement)")
                         chapters = gr.Checkbox(label="Chapitres YouTube")
+                        thumbs = gr.Checkbox(label="Miniatures")
                     with gr.Row():
                         resume = gr.Checkbox(label="Reprendre (réutilise work/)")
                         dry_run = gr.Checkbox(label="Test : s'arrêter au montage")
@@ -65,6 +66,9 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                     status = gr.Markdown()
                     videos = gr.Files(label="Vidéos produites", interactive=False)
                     preview = gr.Video(label="Aperçu", interactive=False)
+                    thumbs_gallery = gr.Gallery(
+                        label="Miniatures produites", columns=3, height=260, interactive=False
+                    )
                     summary = gr.Markdown()
                     chapters_txt = gr.Code(label="Chapitres (à coller dans la description)")
             with gr.Accordion("Journal détaillé", open=False):
@@ -77,14 +81,15 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                     d["shorts"],
                     d["llm"],
                     d["chapters"],
+                    d["thumbnails"],
                 )
 
-            profile.change(on_profile, profile, [formats, shorts, use_llm, chapters])
-            demo.load(on_profile, profile, [formats, shorts, use_llm, chapters])
+            profile.change(on_profile, profile, [formats, shorts, use_llm, chapters, thumbs])
+            demo.load(on_profile, profile, [formats, shorts, use_llm, chapters, thumbs])
             inputs.blur(svc.count_clips, inputs, clips_info)
 
-            def on_run(pid, folder, mus, fmts, n_shorts, llm, chap, res, dry, out):
-                empty = (None, [], None, "", None)
+            def on_run(pid, folder, mus, fmts, n_shorts, llm, chap, thb, res, dry, out):
+                empty = (None, [], None, [], "", None)
                 try:
                     args = svc.build_run_args(
                         pid,
@@ -95,6 +100,7 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                         shorts=n_shorts,
                         use_llm=llm,
                         chapters=chap,
+                        thumbnails=thb,
                         resume=res,
                         dry_run=dry,
                         out_dir=out,
@@ -108,6 +114,7 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                         proc,
                         state.progress_markdown(),
                         "⏳ Montage en cours…",
+                        gr.skip(),
                         gr.skip(),
                         gr.skip(),
                         gr.skip(),
@@ -129,6 +136,7 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                     head,
                     [str(p) for p in state.outputs] or None,
                     str(state.outputs[0]) if state.outputs else None,
+                    [str(p) for p in state.thumbs] or None,
                     svc.summary_markdown(info) if state.returncode == 0 else "",
                     info.get("chapters"),
                     "\n".join(state.log[-400:]),
@@ -144,11 +152,22 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                     shorts,
                     use_llm,
                     chapters,
+                    thumbs,
                     resume,
                     dry_run,
                     out_dir,
                 ],
-                [proc_state, progress, status, videos, preview, summary, chapters_txt, log],
+                [
+                    proc_state,
+                    progress,
+                    status,
+                    videos,
+                    preview,
+                    thumbs_gallery,
+                    summary,
+                    chapters_txt,
+                    log,
+                ],
             )
 
             def on_stop(proc):
@@ -161,6 +180,60 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                 return files[evt.index] if files else None
 
             videos.select(on_pick_video, videos, preview)
+
+        # ------------------------------------------------------------------ Miniatures
+        with gr.Tab("🖼️ Miniatures"):
+            gr.Markdown(
+                "Régénère les miniatures d'un montage déjà fait (étapes réutilisées depuis "
+                "`work/`). Laisse le texte vide pour que Minavio le propose."
+            )
+            with gr.Row():
+                th_profile = gr.Dropdown(profiles, value=first, label="Profil")
+                th_job = gr.Dropdown(
+                    svc.job_choices(cwd / "work"), label="Job récent (work/, date de modification)"
+                )
+                th_refresh = gr.Button("↻ Actualiser la liste")
+            with gr.Row():
+                th_text = gr.Textbox(
+                    label="Texte personnalisé (optionnel)", placeholder="ex. 3 KILLS EN 5 SECONDES"
+                )
+                th_layout = gr.Dropdown(svc.THUMB_LAYOUTS, value="auto", label="Disposition")
+            th_out = gr.Textbox(value=str(default_out), label="Dossier de sortie")
+            th_btn = gr.Button("🖼️ Générer", variant="primary")
+            th_msg = gr.Markdown()
+            th_gallery = gr.Gallery(label="Miniatures", columns=3, height=360, interactive=False)
+            th_files = gr.Files(label="Télécharger", interactive=False)
+
+            def on_th_refresh():
+                return gr.Dropdown(choices=svc.job_choices(cwd / "work"))
+
+            def on_th_run(pid, job_id, text, layout, out):
+                try:
+                    args = svc.build_thumbnails_args(
+                        pid,
+                        job_id,
+                        text=text,
+                        layout=layout,
+                        out_dir=out,
+                        work_dir=str(cwd / "work"),
+                    )
+                except MinavioError as e:
+                    return f"❌ {e}", None, None
+                state, files = svc.run_thumbnails_process(args, cwd)
+                if state.returncode != 0 or not files:
+                    return f"❌ Échec : {state.error or 'voir le journal'}", None, None
+                msg = f"✅ {len(files)} miniature(s)."
+                if state.warnings:
+                    msg += "\n\n⚠️ " + "\n\n⚠️ ".join(dict.fromkeys(state.warnings))
+                return msg, files, files
+
+            th_refresh.click(on_th_refresh, None, th_job)
+            demo.load(on_th_refresh, None, th_job)
+            th_btn.click(
+                on_th_run,
+                [th_profile, th_job, th_text, th_layout, th_out],
+                [th_msg, th_gallery, th_files],
+            )
 
         # ------------------------------------------------------------------ Captures
         with gr.Tab("🎯 Captures de jeu"):
@@ -250,6 +323,57 @@ def build(cwd: Path, default_out: Path) -> gr.Blocks:
                 ping_btn = gr.Button("Tester la connexion")
             ping_md = gr.Markdown()
 
+            gr.Markdown("### LLM : fournisseurs et clés")
+            gr.Markdown(svc.LLM_WARNING)
+            provider_table = gr.Dataframe(
+                headers=["Ordre", "Type", "Modèle", "Clé", "État"],
+                interactive=False,
+                label="Chaîne de fournisseurs du profil (essayés dans l'ordre)",
+            )
+            with gr.Row():
+                prov_refresh = gr.Button("↻ Afficher")
+                prov_ping = gr.Button("Tester chaque fournisseur")
+            key_table = gr.Dataframe(
+                headers=["Service", "Variable", "Source", "Aperçu"],
+                interactive=False,
+                label="Clés d'API (valeurs jamais affichées)",
+            )
+            gr.Markdown(
+                "Jeton GitHub Models : crée un jeton *fine-grained* avec la permission "
+                f"**Models: read** sur {svc.GITHUB_TOKEN_URL}"
+            )
+            with gr.Row():
+                key_name = gr.Dropdown(
+                    [(v, k) for k, v in svc.KEY_LABELS.items()],
+                    value="ANTHROPIC_API_KEY",
+                    label="Clé",
+                )
+                key_value = gr.Textbox(type="password", label="Valeur (masquée)")
+            with gr.Row():
+                key_save = gr.Button("💾 Enregistrer la clé", variant="primary")
+                key_del = gr.Button("🗑 Supprimer la clé")
+            key_msg = gr.Markdown()
+
+            def on_providers(pid, ping=False):
+                return svc.provider_rows(pid, ping=ping) if pid else []
+
+            def on_providers_ping(pid):
+                return on_providers(pid, True)
+
+            def on_key_save(name, value):
+                return svc.save_key(name, value), svc.key_status_rows(), ""
+
+            def on_key_del(name):
+                return svc.remove_key(name), svc.key_status_rows(), ""
+
+            llm_profile.change(on_providers, llm_profile, provider_table)
+            demo.load(on_providers, llm_profile, provider_table)
+            demo.load(svc.key_status_rows, None, key_table)
+            prov_refresh.click(on_providers, llm_profile, provider_table)
+            prov_ping.click(on_providers_ping, llm_profile, provider_table)
+            key_save.click(on_key_save, [key_name, key_value], [key_msg, key_table, key_value])
+            key_del.click(on_key_del, key_name, [key_msg, key_table, key_value])
+
             def on_sys():
                 return svc.system_markdown(REPO_ROOT)
 
@@ -270,6 +394,6 @@ def launch(port: int = 7860, open_browser: bool = True, out_dir: Path | None = N
         server_name="127.0.0.1",
         server_port=port,
         inbrowser=open_browser,
-        allowed_paths=[str(out), str(REPO_ROOT / "configs")],
+        allowed_paths=[str(out), str(cwd / "out"), str(cwd / "work"), str(REPO_ROOT / "configs")],
         show_error=True,
     )

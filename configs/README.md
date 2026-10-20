@@ -149,13 +149,74 @@ Fichiers : `out/<profil>/<job_id>_short<i>.mp4`. Un short qui échoue donne un w
 `work/<job_id>/chapters.json`. Désactivable par `minavio run --no-chapters`. Ignorée avec `--no-llm`.
 Les chemins de ces fichiers annexes sont affichés après les vidéos.
 
+## `llm.providers` : chaîne de fournisseurs LLM
+
+Liste optionnelle, essayée dans l'ordre : le premier fournisseur joignable sert. Vide = le LLM
+local défini par `llm.base_url` / `llm.model` (comportement historique).
+
+```yaml
+llm:
+  prompt: gaming
+  providers:
+    - { kind: local }                      # Ollama / llama.cpp (gratuit, privé)
+    - { kind: anthropic, effort: low }     # secours, seulement si ANTHROPIC_API_KEY existe
+```
+
+| `kind` | Clé (variable) | Remarques |
+| :--- | :--- | :--- |
+| `local` | aucune | serveur compatible OpenAI sur la machine |
+| `anthropic` | `ANTHROPIC_API_KEY` | `effort: low\|medium\|high` ; payant |
+| `google` | `GEMINI_API_KEY` | Gemini ; payant au-delà du quota gratuit |
+| `github` | `GITHUB_TOKEN` | GitHub Models (abonnement Copilot) |
+| `openai_compat` | `OPENAI_API_KEY` | `base_url` et `model` obligatoires |
+
+Autres champs : `model`, `vision_model`, `base_url`, `api_key_env` (autre nom de variable).
+**Les clés ne sont jamais dans le YAML.** Claude, Gemini et les API payantes envoient les
+transcripts et images au fournisseur : coût et confidentialité à votre charge.
+
+`{kind: github}` (GitHub Models, base `https://models.github.ai/inference`) utilise votre
+abonnement Copilot. Créez un jeton fine-grained sur
+<https://github.com/settings/personal-access-tokens> avec la permission **Models: read**, puis
+`minavio llm set-key GITHUB_TOKEN`. Limites de la preview : environ 8k tokens d'entrée par requête
+et quelques requêtes par minute : à réserver au **secours** (en dernier de la chaîne), pas aux longs
+transcripts.
+
+## Secrets locaux
+
+Les clés se lisent dans l'environnement, sinon dans `~/.config/minavio/secrets.env`
+(`%APPDATA%\minavio\secrets.env` sous Windows ; `MINAVIO_SECRETS_FILE` pour un autre chemin),
+lignes `CLE=valeur`, permissions 600. Une variable déjà définie n'est jamais écrasée.
+
+```bash
+minavio llm set-key ANTHROPIC_API_KEY    # saisie masquée ; --delete pour retirer
+minavio llm keys                         # état env / fichier / absent, sans valeur
+minavio llm ping minivitch               # une ligne par fournisseur de la chaîne
+```
+
+## `thumbnails` : miniatures
+
+| Clé | Rôle |
+| :--- | :--- |
+| `enabled` | active l'étape `thumbnails` (désactivable par run : `--no-thumbnails`) |
+| `count` | variantes produites (A/B test), 1 à 6 |
+| `layouts` | compositions : `hero` (1 image), `split` (2), `collage` (3) |
+| `formats` | tailles de sortie (défaut `youtube` 1280x720 et `short` 1080x1920) |
+| `candidates` | images présélectionnées avant le choix final |
+| `max_words` | longueur maximale du texte |
+| `use_vision_llm` | juge visuel (local, Claude, Gemini) ; sinon heuristique |
+
+Sortie : `out/<profil>/<job>_thumb<i>_<format>.png`, résumé dans `work/<job>/thumbnails.json`
+(images candidates dans `work/<job>/thumbs/`). L'étape est optionnelle : un échec = un warning.
+Pour refaire des miniatures d'un job existant :
+`minavio thumbnails minivitch <job_id> [--text "TON TEXTE"] [--layout hero|split|collage]`.
+
 ## Profils livrés
 
 | Profil | Particularités |
 | :--- | :--- |
-| `minivitch` | sfx, cold open 2,5 s, chapitres, 3 shorts par moment, `kill_counter` et `rewind` |
+| `minivitch` | sfx, cold open 2,5 s, chapitres, 3 shorts par moment, `kill_counter` et `rewind`, miniatures, exemple `llm.providers` (local puis Claude) |
 | `minivitch_top10` | « Minivitch — Top 10 » : copie de minivitch en `order: countdown`, `max_highlights: 10`, `rank_card`, durée cible 420 s, shorts désactivés |
-| `bytetricks`, `thelostchat` | inchangés (sfx désactivé, pas de chapitres ni de shorts) |
+| `bytetricks`, `thelostchat` | sfx désactivé, pas de chapitres ni de shorts ; miniatures activées (hero+split / hero+collage) |
 
 ## Environnement
 

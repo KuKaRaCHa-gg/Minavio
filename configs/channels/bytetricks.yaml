@@ -50,3 +50,6 @@ editing:
   pre_roll_s: 0.3
   post_roll_s: 0.3
   autocut: { enabled: true, min_silence_s: 0.5, punch_in: 1.08 }  # coupe les silences
+
+# Miniatures (voir configs/README.md).
+thumbnails: { enabled: true, count: 3, layouts: [hero, split], max_words: 4 }

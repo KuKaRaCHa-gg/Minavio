@@ -39,6 +39,9 @@ def load_game(game_id: str, config_dir: Path = CONFIG_DIR) -> GameProfile:
 
 
 def load_profile(profile_id: str, config_dir: Path = CONFIG_DIR) -> ChannelProfile:
+    from minavio.config.secrets import load_secrets
+
+    load_secrets()  # clés d'API locales -> os.environ (une seule fois, sans écraser)
     path = config_dir / "channels" / f"{profile_id}.yaml"
     if not path.exists():
         known = ", ".join(list_profiles(config_dir)) or "aucun"

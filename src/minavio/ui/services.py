@@ -41,6 +41,7 @@ STEPS = [
     ("chapters", "Chapitres"),
     ("overlay_files", "Animations Remotion"),
     ("render", "Rendu vidéo"),
+    ("thumbnails", "Miniatures"),
     ("short", "Shorts par moment"),
 ]
 
@@ -48,6 +49,7 @@ _STEP_RE = re.compile(r"\[(?P<name>[\w]+)\] (?P<state>ok en (?P<secs>[\d.]+)s|re
 _JOB_RE = re.compile(r"job (?P<job>[0-9a-f]{6,}) :")
 _WARN_RE = re.compile(r"\b(WARNING|ERROR)\b")
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 # --------------------------------------------------------------------------- profils
@@ -72,6 +74,7 @@ def profile_defaults(profile_id: str) -> dict:
         "shorts": p.shorts.per_highlight,
         "chapters": p.chapters,
         "llm": p.llm.enabled,
+        "thumbnails": p.thumbnails.enabled,
     }
 
 
@@ -224,6 +227,7 @@ def build_run_args(
     shorts: int | None = None,
     use_llm: bool = True,
     chapters: bool = True,
+    thumbnails: bool = True,
     resume: bool = False,
     dry_run: bool = False,
     out_dir: str = "out",
@@ -245,6 +249,8 @@ def build_run_args(
         args.append("--no-llm")
     if not chapters:
         args.append("--no-chapters")
+    if not thumbnails:
+        args.append("--no-thumbnails")
     if resume:
         args.append("--resume")
     if dry_run:
@@ -262,6 +268,7 @@ class JobState:
     current: str | None = None
     warnings: list[str] = field(default_factory=list)
     outputs: list[Path] = field(default_factory=list)
+    thumbs: list[Path] = field(default_factory=list)
     log: list[str] = field(default_factory=list)
     returncode: int | None = None
     error: str | None = None
@@ -285,6 +292,8 @@ class JobState:
             p = Path(line.strip())
             if p.suffix.lower() in VIDEO_EXTS and p.is_file():
                 self.outputs.append(p)
+            elif p.suffix.lower() in IMAGE_EXTS and p.is_file():
+                self.thumbs.append(p)
 
     def progress_markdown(self) -> str:
         rows = []
@@ -339,7 +348,7 @@ def run_job_process(args: list[str], cwd: Path) -> Iterator[tuple[JobState, subp
         state.feed(line)
         yield state, proc
     state.returncode = proc.wait()
-    if state.returncode == 0 and not state.done and not state.outputs:
+    if state.returncode == 0 and not state.done and not state.outputs and not state.thumbs:
         # Sortie « propre » sans aucune étape : rien n'a tourné (commande mal formée…).
         state.returncode = -1
         state.error = state.error or "le montage n'a exécuté aucune étape (voir le journal)"
@@ -455,6 +464,8 @@ def llm_ping_markdown(profile_id: str) -> str:
         ok, detail = False, str(e)
     else:
         detail = ""
+    if p.llm.providers:
+        return "\n\n".join(f"- {n} : {m}" for n, m in _ping_rows(p))
     state = "✅ connecté" if ok else "❌ injoignable"
     tip = (
         ""
@@ -463,3 +474,164 @@ def llm_ping_markdown(profile_id: str) -> str:
         "`MINAVIO_LLM_MODEL`, ou `llm.base_url` / `llm.model` dans l'onglet Réglages."
     )
     return f"**{p.llm.model}** sur `{p.llm.base_url}` : {state}{detail and ' — ' + detail}{tip}"
+
+
+# --------------------------------------------------------------------------- LLM multi-fournisseurs
+
+DEFAULT_KEY_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "google": "GEMINI_API_KEY",
+    "github": "GITHUB_TOKEN",
+    "openai_compat": "OPENAI_API_KEY",
+}
+KEY_LABELS = {
+    "ANTHROPIC_API_KEY": "Anthropic (Claude)",
+    "GEMINI_API_KEY": "Google (Gemini)",
+    "OPENAI_API_KEY": "OpenAI-compatible",
+    "GITHUB_TOKEN": "GitHub Models (Copilot)",
+}
+GITHUB_TOKEN_URL = "https://github.com/settings/personal-access-tokens"
+LLM_WARNING = (
+    "⚠️ **Claude, Gemini et les API cloud sont payants** (sauf quotas gratuits) et envoient les "
+    "transcripts et images de tes clips au fournisseur. GitHub Models (abonnement Copilot) a des "
+    "limites strictes (~8k tokens d'entrée, quelques requêtes/min) : plutôt en secours. "
+    "Les clés sont stockées en clair dans un fichier local réservé à ton compte, jamais dans les "
+    "profils YAML."
+)
+
+
+def _ping_rows(p: ChannelProfile) -> list[tuple[str, str]]:
+    from minavio.cli import ping_providers
+    from minavio.llm.client import LocalLLM
+
+    try:
+        rows = ping_providers(LocalLLM.from_settings(p.llm), p.llm)
+    except MinavioError as e:
+        return [(p.llm.model, f"❌ {e}")]
+    return [(n, "✅ ok" if ok else f"❌ {d}") for n, ok, d in rows]
+
+
+def provider_rows(profile_id: str, ping: bool = False) -> list[list[str]]:
+    """Tableau [ordre, type, modèle, clé, état] de la chaîne de fournisseurs du profil."""
+    from minavio.config.secrets import secret_status
+
+    p = load_profile(profile_id)
+    providers = p.llm.providers or []
+    pings = dict(_ping_rows(p)) if ping else {}
+    rows: list[list[str]] = []
+    if not providers:
+        name = f"{p.llm.model} @ {p.llm.base_url}"
+        rows.append(["1", "local", p.llm.model, "—", _state(pings, name, ping)])
+        return rows
+    ping_list = list(pings.values())
+    for i, prov in enumerate(providers, 1):
+        env = prov.api_key_env or DEFAULT_KEY_ENV.get(prov.kind)
+        key = secret_status([env])[env] if env else "—"
+        model = prov.model or ("défaut" if prov.kind != "local" else p.llm.model)
+        state = ping_list[i - 1] if ping and i - 1 < len(ping_list) else "non testé"
+        rows.append([str(i), prov.kind, model, key, state])
+    return rows
+
+
+def _state(pings: dict, name: str, ping: bool) -> str:
+    if not ping:
+        return "non testé"
+    return next(iter(pings.values()), "non testé")
+
+
+def key_status_rows() -> list[list[str]]:
+    """[service, variable, état, aperçu masqué] ; jamais la valeur."""
+    from minavio.config.secrets import KNOWN_KEYS, load_secrets, mask, secret_status
+
+    load_secrets()
+    import os
+
+    rows = []
+    for name, state in secret_status(KNOWN_KEYS).items():
+        value = os.environ.get(name, "")
+        rows.append([KEY_LABELS.get(name, name), name, state, mask(value) if value else "—"])
+    return rows
+
+
+def save_key(name: str, value: str) -> str:
+    from minavio.config.secrets import mask, set_secret
+
+    if name not in KEY_LABELS:
+        return f"❌ Clé inconnue : {name}"
+    try:
+        set_secret(name, value or "")
+    except MinavioError as e:
+        return f"❌ {e}"
+    return f"✅ {name} enregistrée ({mask(value.strip())})."
+
+
+def remove_key(name: str) -> str:
+    from minavio.config.secrets import delete_secret
+
+    if name not in KEY_LABELS:
+        return f"❌ Clé inconnue : {name}"
+    try:
+        gone = delete_secret(name)
+    except MinavioError as e:
+        return f"❌ {e}"
+    return f"✅ {name} supprimée du fichier." if gone else f"{name} n'était pas dans le fichier."
+
+
+# --------------------------------------------------------------------------- miniatures
+
+THUMB_LAYOUTS = ["auto", "hero", "split", "collage"]
+
+
+@dataclass
+class JobEntry:
+    job_id: str
+    mtime: float
+    label: str
+
+
+def list_jobs(work_root: Path) -> list[JobEntry]:
+    """Dossiers `work/<job>/` (les plus récents d'abord) avec leur date."""
+    import datetime as dt
+
+    if not work_root.is_dir():
+        return []
+    jobs = []
+    for d in work_root.iterdir():
+        if d.is_dir() and (d / "detect.json").exists():
+            m = d.stat().st_mtime
+            when = dt.datetime.fromtimestamp(m).strftime("%d/%m/%Y %H:%M")
+            jobs.append(JobEntry(d.name, m, f"{d.name} — {when}"))
+    return sorted(jobs, key=lambda j: j.mtime, reverse=True)
+
+
+def job_choices(work_root: Path) -> list[tuple[str, str]]:
+    return [(j.label, j.job_id) for j in list_jobs(work_root)]
+
+
+def build_thumbnails_args(
+    profile_id: str,
+    job_id: str,
+    *,
+    text: str = "",
+    layout: str = "auto",
+    out_dir: str = "out",
+    work_dir: str = "work",
+) -> list[str]:
+    if not job_id:
+        raise MinavioError("Choisis un job récent (lance d'abord un montage).")
+    args = [sys.executable, "-m", "minavio", "thumbnails", profile_id, job_id]
+    if text.strip():
+        args += ["--text", text.strip()]
+    if layout and layout != "auto":
+        args += ["--layout", layout]
+    args += ["--work", str(Path(work_dir).expanduser())]
+    args += ["--out", str(Path(out_dir or "out").expanduser())]
+    return args
+
+
+def run_thumbnails_process(args: list[str], cwd: Path) -> tuple[JobState, list[str]]:
+    """Exécute `minavio thumbnails` ; (état, PNG produits)."""
+    state = JobState()
+    for current, _ in run_job_process(args, cwd):
+        state = current
+    return state, [str(p) for p in state.thumbs]
