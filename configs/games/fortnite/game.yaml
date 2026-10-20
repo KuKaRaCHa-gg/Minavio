@@ -1,0 +1,6 @@
+# Profil OCR messages d'élimination (sans templates PNG) : centre / bas.
+# Mots-clés visés (EN/FR) : Victory Royale, TOP 1, eliminated, éliminé.
+id: fortnite
+name: Fortnite
+combo_window_s: 6.0
+ui_templates: []

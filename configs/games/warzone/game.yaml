@@ -1,0 +1,6 @@
+# Profil OCR killfeed (sans templates PNG).
+# Mots-clés visés (EN/FR) : Victory, Warzone Victory, multi-kill, squad wiped.
+id: warzone
+name: Warzone
+combo_window_s: 6.0
+ui_templates: []
