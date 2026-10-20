@@ -59,6 +59,23 @@ class SfxSettings(_Model):
     on_cold_open: str | None = "rewind"
 
 
+class SeparationSettings(_Model):
+    """Demucs : sépare voix / musique / reste. Sert à retirer la musique du jeu (Content ID)."""
+
+    enabled: bool = False
+    model: str = "htdemucs"
+    remove_music: bool = True  # garde voix + effets du jeu, retire la piste musicale
+
+
+class DenoiseSettings(_Model):
+    """Débruitage de la voix (ventilo, clavier)."""
+
+    enabled: bool = False
+    backend: Literal["auto", "deepfilternet", "arnndn"] = (
+        "auto"  # auto : DeepFilterNet sinon arnndn
+    )
+
+
 class AudioSettings(_Model):
     music_dir: str | None = None
     beat_sync: bool = True
@@ -66,6 +83,8 @@ class AudioSettings(_Model):
     ducking: DuckingSettings = Field(default_factory=DuckingSettings)
     vad: VadSettings = Field(default_factory=VadSettings)
     sfx: SfxSettings = Field(default_factory=SfxSettings)
+    separation: SeparationSettings = Field(default_factory=SeparationSettings)
+    denoise: DenoiseSettings = Field(default_factory=DenoiseSettings)
 
 
 class DetectorRef(_Model):
@@ -141,9 +160,22 @@ class ColdOpenSettings(_Model):
     duration_s: float = Field(default=2.5, gt=0.5, le=8)
 
 
+class SlowmoSettings(_Model):
+    """Ralenti sur l'instant décisif (kill) avec interpolation d'images."""
+
+    enabled: bool = False
+    factor: float = Field(default=0.5, gt=0.1, lt=1)  # vitesse pendant le ralenti
+    duration_s: float = Field(
+        default=1.2, gt=0.2, le=5
+    )  # durée SOURCE ralentie, centrée sur le pic
+    labels: list[str] = Field(default_factory=lambda: ["kill", "multi_kill", "clutch"])
+    interpolation: Literal["auto", "rife", "minterpolate", "none"] = "auto"
+
+
 class EditingSettings(_Model):
     autocut: AutocutSettings = Field(default_factory=AutocutSettings)
     cold_open: ColdOpenSettings = Field(default_factory=ColdOpenSettings)
+    slowmo: SlowmoSettings = Field(default_factory=SlowmoSettings)
     # chronological = ordre des sources ; countdown = du moins bon au meilleur (Top N).
     order: Literal["chronological", "countdown"] = "chronological"
     pacing: Pacing = "dynamic"
@@ -217,6 +249,21 @@ class ThumbnailSettings(_Model):
     use_vision_llm: bool = True  # juge visuel (Qwen-VL local, Claude, Gemini) ; sinon heuristique
 
 
+class PublishSettings(_Model):
+    """Publication YouTube (Data API v3, OAuth local). Rien n'est publié sans `minavio publish`."""
+
+    enabled: bool = False
+    privacy: Literal["private", "unlisted", "public"] = "private"
+    # Heure locale de publication programmée (« 18:00 » = prochain 18:00) ; None = immédiat.
+    schedule_at: str | None = None
+    category_id: str = "20"  # 20 = Gaming, 28 = Science & Technology, 24 = Entertainment
+    made_for_kids: bool = False
+    playlist_id: str | None = None
+    shorts: bool = True  # publie aussi les Shorts produits
+    extra_tags: list[str] = Field(default_factory=list)
+    language: str = "fr"
+
+
 class ChannelProfile(_Model):
     id: str
     display_name: str
@@ -233,6 +280,7 @@ class ChannelProfile(_Model):
     shorts: ShortsSettings = Field(default_factory=ShortsSettings)
     chapters: bool = False  # chapitres YouTube dans out/<profil>/<job>_chapters.txt
     thumbnails: ThumbnailSettings = Field(default_factory=ThumbnailSettings)
+    publish: PublishSettings = Field(default_factory=PublishSettings)
 
 
 class UiTemplate(_Model):
@@ -246,8 +294,24 @@ class UiTemplate(_Model):
     cooldown_s: float = Field(default=1.0, ge=0)
 
 
+class KillfeedSettings(_Model):
+    """Lecture OCR du killfeed : aucun template à fournir. `roi` None = zone trouvée seule."""
+
+    roi: tuple[float, float, float, float] | None = None  # x, y, w, h normalisés
+    # Mots déclencheurs (insensibles à la casse, plusieurs langues). label -> mots.
+    keywords: dict[str, list[str]] = Field(
+        default_factory=lambda: {
+            "kill": ["eliminated", "éliminé", "killed", "a tué", "headshot"],
+            "knock": ["knocked", "knocked down", "à terre", "downed"],
+            "win": ["champion", "victory", "victoire", "winner"],
+        }
+    )
+    player_names: list[str] = Field(default_factory=list)  # pseudo(s) du joueur : kill « à nous »
+
+
 class GameProfile(_Model):
     id: str
     name: str
     ui_templates: list[UiTemplate] = Field(default_factory=list)
     combo_window_s: float = Field(default=6.0, gt=0)  # ex. multi-kills regroupés
+    killfeed: KillfeedSettings = Field(default_factory=KillfeedSettings)

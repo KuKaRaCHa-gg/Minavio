@@ -75,6 +75,7 @@ class Clip(_TimeSpan):
     # même id ; cold open = -1) et instant décisif du moment (kill, pic), en temps SOURCE.
     moment: int | None = None
     peak_t: float | None = None
+    interpolate: bool = False  # segment ralenti : interpoler les images (RIFE / minterpolate)
 
 
 class SfxCue(_Model):
@@ -122,6 +123,8 @@ class Timeline(_Model):
     sfx: list[SfxCue] = Field(default_factory=list)
     # Index (dans `clips`) du premier clip « réel » : les clips avant sont un cold open.
     cold_open_clips: int = Field(default=0, ge=0)
+    # Pistes audio retraitées (séparation / débruitage) : source -> fichier audio (même durée).
+    audio_tracks: dict[Path, Path] = Field(default_factory=dict)
 
     @property
     def duration(self) -> float:
