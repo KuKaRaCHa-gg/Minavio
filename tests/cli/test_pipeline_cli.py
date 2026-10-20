@@ -43,6 +43,7 @@ class Fakes:
 
         def detect(sources, profile):
             self._rec("detect")
+            self.detect_profile = profile
             return self.highlights
 
         def transcribe(source, language=None):
@@ -83,7 +84,7 @@ class Fakes:
                 captions=transcript or [],
             )
 
-        def audio_tracks(sources, profile, work_dir):
+        def audio_tracks(sources, profile, work_dir, warnings=None):
             self.audio_calls.append(list(sources))
             if "audio_clean" in self.fail:
                 raise RuntimeError("demucs absent")

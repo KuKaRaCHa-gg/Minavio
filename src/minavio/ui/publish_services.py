@@ -39,10 +39,9 @@ def connect_youtube(client_secret_file: str | None = None) -> str:
 
 def video_choices(profile_id: str, job_id: str, out_dir: str | Path) -> list[str]:
     """`youtube`, `shorts`, `all` et chaque `short<i>` effectivement rendu pour ce job."""
-    shorts = sorted(
-        p.stem.rsplit("_", 1)[1] for p in (Path(out_dir) / profile_id).glob(f"{job_id}_short*.mp4")
-    )
-    return [*PUBLISH_VIDEOS, *shorts]
+    from minavio.publish.youtube import short_keys
+
+    return [*PUBLISH_VIDEOS, *short_keys(Path(out_dir) / profile_id, job_id)]
 
 
 def _overrides(video: str, title: str | None, description: str | None, tags: str | None) -> dict:

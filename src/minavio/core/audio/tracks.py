@@ -87,9 +87,16 @@ def _process_source(source: Path, profile: ChannelProfile, out: Path, tmp: Path)
 
 
 def prepare_audio_tracks(
-    sources: list[Path], profile: ChannelProfile, work_dir: Path
+    sources: list[Path],
+    profile: ChannelProfile,
+    work_dir: Path,
+    warnings: list[str] | None = None,
 ) -> dict[Path, Path]:
-    """source -> piste audio retraitée ; les sources non traitées ou en échec sont absentes."""
+    """source -> piste audio retraitée ; les sources non traitées ou en échec sont absentes.
+
+    Les échecs par source sont ajoutés à `warnings`. Le cache (`audio/<stem>_<hash>.wav`, haché
+    sur les réglages) rend un nouvel appel gratuit : pas besoin de reprise au niveau du job.
+    """
     sep, den = profile.audio.separation, profile.audio.denoise
     result: dict[Path, Path] = {}
     if not (sep.enabled or den.enabled):
@@ -112,5 +119,8 @@ def prepare_audio_tracks(
                 shutil.move(part, out)  # déplacement final : pas de cache partiel
             result[source] = out
         except Exception as e:
-            log.warning("Nettoyage audio ignoré pour %s (audio d'origine conservé) : %s", source, e)
+            msg = f"Nettoyage audio ignoré pour {source.name} (audio d'origine conservé) : {e}"
+            log.warning(msg)
+            if warnings is not None:
+                warnings.append(msg)
     return result

@@ -143,7 +143,7 @@ def job(tmp_path):
         )
     )
     (work / "chapters.txt").write_text("0:00 Intro\n0:30 Le clutch\n1:10 Fin")
-    for name in ("youtube", "short1", "short2"):
+    for name in ("youtube", "shorts", "short1", "short2"):  # shorts = compilation 9:16
         (out / f"job1_{name}.mp4").write_bytes(b"video")
     thumbs = tmp_path / "out" / "minivitch"
     Image.new("RGB", (1280, 720), "red").save(thumbs / "job1_thumb1_youtube.png")

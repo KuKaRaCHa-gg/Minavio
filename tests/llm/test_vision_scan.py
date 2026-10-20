@@ -335,3 +335,12 @@ def test_system_prompt_includes_knowledge(monkeypatch):
     assert len(vs._system(p, None)) > len(base)  # fiches Apex / killfeed ajoutées
     monkeypatch.setenv("MINAVIO_KB", "0")
     assert vs._system(p, None) == base
+
+
+def test_vlm_down_keeps_cached_verdicts(video):
+    prm2 = {"mode": "full", "max_calls": 2}
+    vs.scan_source(video, _profile(), prm2, _chain(FakeVLM()))  # 2 fenêtres en cache mémoire
+    out = vs.scan_source(
+        video, _profile(), {"mode": "full", "max_calls": 4}, _chain(FakeVLM(fail=True))
+    )
+    assert out  # les verdicts en cache ne sont pas jetés quand le VLM tombe ensuite

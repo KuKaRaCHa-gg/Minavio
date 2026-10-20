@@ -96,14 +96,16 @@ def test_audio_clean_failure_is_a_warning(env):
     assert res.outputs and all(tl.audio_tracks == {} for tl in fakes.rendered)
 
 
-def test_audio_clean_resume_reuses_json_and_recomputes_when_files_vanish(env):
+def test_audio_clean_replayed_on_resume(env):
+    # Rejouée à chaque run (le cache par source/réglages est dans prepare_audio_tracks) :
+    # un échec (Demucs absent) n'est pas figé par --resume.
     fakes, _ = env
-    res = job(env)
-    job(env, resume=True)
-    assert len(fakes.audio_calls) == 1
-    (res.work_dir / "clip.clean.wav").unlink()
-    job(env, resume=True)
+    fakes.fail.add("audio_clean")
+    job(env)
+    fakes.fail.discard("audio_clean")
+    res = job(env, resume=True)
     assert len(fakes.audio_calls) == 2
+    assert json.loads((res.work_dir / "audio_tracks.json").read_text())
 
 
 def test_audio_clean_not_run_on_dry_run(env):
@@ -146,7 +148,7 @@ def test_minivitch_profiles_are_autonomous(pid):
     assert p.editing.slowmo.duration_s == 1.2
     assert p.audio.separation.enabled and p.audio.separation.remove_music
     assert p.publish.privacy == "private" and p.publish.category_id == "20"
-    assert p.publish.schedule_at == "18:00"
+    assert p.publish.schedule_at is None  # privée par défaut : programmer impose public
 
 
 def test_other_profiles():
@@ -209,3 +211,12 @@ def test_publish_auth_rejects_bad_client_secret(published, tmp_path):
     bad.write_text("{}")
     r = runner.invoke(app, ["publish", "auth", "--client-secret", str(bad)])
     assert r.exit_code == 1 and "Application de bureau" in r.output
+
+
+def test_no_llm_disables_llm_for_detectors(env):
+    # vision_scan est un détecteur : --no-llm doit lui couper le LLM aussi.
+    fakes, _ = env
+    job(env, use_llm=False)
+    assert fakes.detect_profile.llm.enabled is False
+    job(env)
+    assert fakes.detect_profile.llm.enabled is True

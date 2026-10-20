@@ -414,14 +414,6 @@ def _short_format(profile: ChannelProfile) -> OutputFormat:
     return matches[0]
 
 
-def _load_audio_tracks(d: dict[str, str]) -> dict[Path, Path]:
-    tracks = {Path(k): Path(v) for k, v in d.items()}
-    missing = [str(v) for v in tracks.values() if not v.exists()]
-    if missing:  # pistes supprimées : on recalcule
-        raise MinavioError(f"piste(s) absente(s) : {missing[:1]}")
-    return tracks
-
-
 def _with_audio_tracks(timeline: Timeline, tracks: dict[Path, Path]) -> Timeline:
     """Pistes propres des seules sources utilisées par les clips de la timeline."""
     used = {c.source for c in timeline.clips}
@@ -475,14 +467,21 @@ def run_job(
 
     audio_tracks: dict[Path, Path] = {}
     if (profile.audio.separation.enabled or profile.audio.denoise.enabled) and not dry_run:
-        audio_tracks = steps.run(
-            "audio_clean",
-            lambda: _api("prepare_audio_tracks")(sources, profile, work),
-            dump=lambda d: {str(k): str(v) for k, v in d.items()},
-            load=_load_audio_tracks,
-            optional=True,
-            default={},
-            file="audio_tracks",
+        # Toujours rejoué (même avec --resume) : le cache par source et par réglages évite le
+        # recalcul, et une dépendance installée après coup (Demucs...) est bien prise en compte.
+        try:
+            audio_tracks = _api("prepare_audio_tracks")(sources, profile, work, warnings)
+        except Exception as e:
+            msg = f"étape 'audio_clean' ignorée : {e}"
+            log.warning(msg)
+            warnings.append(msg)
+        (work / "audio_tracks.json").write_text(
+            json.dumps({str(k): str(v) for k, v in audio_tracks.items()}, indent=2)
+        )
+    if not use_llm and profile.llm.enabled:
+        # --no-llm : rien ne part vers un LLM, y compris le juge visuel (vision_scan).
+        profile = profile.model_copy(
+            update={"llm": profile.llm.model_copy(update={"enabled": False})}
         )
     highlights: list[Highlight] = steps.run(
         "detect",

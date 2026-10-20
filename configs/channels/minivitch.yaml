@@ -81,4 +81,5 @@ shorts: { per_highlight: 3, max_duration_s: 30, format: shorts }
 thumbnails: { enabled: true, count: 3, layouts: [hero, split, collage], max_words: 4 }
 
 # Publication YouTube : jamais automatique (`minavio publish <profil> <job>` ou onglet Publication).
-publish: { privacy: private, category_id: "20", schedule_at: "18:00" }
+# Programmer (publique à 18:00) : privacy: public + schedule_at: "18:00". Privée par défaut.
+publish: { privacy: private, category_id: "20", schedule_at: null }

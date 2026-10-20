@@ -37,7 +37,9 @@ def test_next_occurrence_is_utc_and_in_the_future(paris):
 def test_long_video_request_body(profile, job, service, paris):
     profile.publish.extra_tags = ["Minivitch", "APEX"]
     profile.publish.made_for_kids = False
-    [r] = publish(profile, job, now=datetime(2026, 10, 20, 12, 0))
+    [r] = publish(
+        profile, job, privacy="public", schedule_at="18:00", now=datetime(2026, 10, 20, 12, 0)
+    )
     assert r["status"] == "uploaded" and r["video_id"] == "vid1"
     (call,) = service.inserted()
     assert call["part"] == "snippet,status"
@@ -47,7 +49,7 @@ def test_long_video_request_body(profile, job, service, paris):
     assert "Un clutch fou." in sn["description"]
     assert sn["tags"] == ["apex", "clutch", "Minivitch"]  # dédupliqués sans casse
     assert sn["categoryId"] == "20" and sn["defaultLanguage"] == "fr"
-    # schedule_at 18:00 du profil => publishAt en UTC et privacy forcée à private
+    # programmée publique à 18:00 => envoyée private avec publishAt en UTC
     assert st == {
         "privacyStatus": "private",
         "selfDeclaredMadeForKids": False,
@@ -201,3 +203,15 @@ def test_chapters_fall_back_to_out_dir(profile, job):
     (job.out / "job1_chapters.txt").write_text("0:00 Debut")
     [r] = publish(profile, job, dry_run=True)
     assert r["description"].endswith("0:00 Debut")
+
+
+def test_schedule_requires_public(profile, job, service):
+    # publishAt rendrait publique une vidéo demandée private/unlisted : refusé, rien n'est envoyé
+    for privacy in ("private", "unlisted"):
+        with pytest.raises(MinavioError, match="--privacy public"):
+            publish(profile, job, privacy=privacy, schedule_at="18:00")
+    assert not service.inserted()
+
+
+def test_compilation_shorts_is_not_a_short(job):
+    assert youtube.short_keys(job.out, "job1") == ["short1", "short2"]

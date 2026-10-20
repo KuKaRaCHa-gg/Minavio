@@ -283,6 +283,17 @@ class ChannelProfile(_Model):
     publish: PublishSettings = Field(default_factory=PublishSettings)
 
 
+def _check_roi(roi: tuple[float, float, float, float] | None) -> None:
+    """x, y, w, h normalisés : la zone doit tenir dans l'image et ne pas être vide."""
+    if roi is None:
+        return
+    x, y, w, h = roi
+    if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1):
+        raise ValueError(f"roi {list(roi)} : x, y dans [0, 1[ et w, h dans ]0, 1] (normalisés)")
+    if x + w > 1 + 1e-6 or y + h > 1 + 1e-6:
+        raise ValueError(f"roi {list(roi)} déborde de l'image : x + w et y + h doivent être <= 1")
+
+
 class UiTemplate(_Model):
     """Élément d'UI à repérer par template matching OpenCV."""
 
@@ -292,6 +303,11 @@ class UiTemplate(_Model):
     roi: tuple[float, float, float, float] = (0, 0, 1, 1)  # x, y, w, h normalisés
     threshold: float = Field(default=0.8, ge=0, le=1)
     cooldown_s: float = Field(default=1.0, ge=0)
+
+    @model_validator(mode="after")
+    def _roi(self) -> UiTemplate:
+        _check_roi(self.roi)
+        return self
 
 
 class KillfeedSettings(_Model):
@@ -307,6 +323,11 @@ class KillfeedSettings(_Model):
         }
     )
     player_names: list[str] = Field(default_factory=list)  # pseudo(s) du joueur : kill « à nous »
+
+    @model_validator(mode="after")
+    def _roi(self) -> KillfeedSettings:
+        _check_roi(self.roi)
+        return self
 
 
 GameGenre = Literal[

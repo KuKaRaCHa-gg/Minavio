@@ -109,7 +109,7 @@ def test_errors_become_messages(job, no_network):
 
 def test_profile_settings_and_auth_markdown(job):
     s = ps.profile_publish_settings("minivitch")
-    assert s == {"privacy": "private", "schedule_at": "18:00"}
+    assert s == {"privacy": "private", "schedule_at": ""}  # privée, non programmée
     assert "non configuré" in ps.auth_markdown()
     auth._write_private(auth.token_path(), '{"token": "SECRET"}')
     md = ps.auth_markdown()

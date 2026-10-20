@@ -301,9 +301,11 @@ def scan_source(
             if key in _MEM_CACHE:
                 raw = _MEM_CACHE[key]
                 stats.cached += 1
+                answered = True  # verdicts en cache : un VLM éteint ensuite ne les jette pas
             elif dkey in disk:
                 raw = disk[dkey]
                 stats.cached += 1
+                answered = True
             else:
                 try:
                     frames = extract_frames(src, t, duration, Path(td), f"w{i}")

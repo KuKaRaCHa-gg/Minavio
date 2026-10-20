@@ -89,3 +89,16 @@ def test_moments_use_ids_not_heuristics():
     assert [(m.first_clip, m.last_clip) for m in ms] == [(0, 0), (1, 1), (2, 3)]
     # peak en temps timeline : 6.5 + 6.5 + 3 + (38 - 37) = 17.0
     assert [m.peak for m in ms] == [3.0, 9.5, 17.0]
+
+
+@pytest.mark.parametrize("roi", [(0.5, 0, 0, 0.2), (0.8, 0, 0.4, 0.2), (0, 1.2, 0.1, 0.1)])
+def test_invalid_roi_rejected(roi):
+    from pydantic import ValidationError
+
+    from minavio.config.schema import KillfeedSettings, UiTemplate
+
+    with pytest.raises(ValidationError, match="roi"):
+        KillfeedSettings(roi=roi)
+    with pytest.raises(ValidationError, match="roi"):
+        UiTemplate(name="k", image="k.png", label="kill", roi=roi)
+    assert KillfeedSettings(roi=(0.6, 0, 0.4, 0.3)).roi == (0.6, 0, 0.4, 0.3)

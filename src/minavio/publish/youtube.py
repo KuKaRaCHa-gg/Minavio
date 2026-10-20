@@ -267,11 +267,18 @@ def _mimetype(path: Path) -> str:
 # ----------------------------------------------------------------------------- plan
 
 
+def short_keys(files_dir: Path, job_id: str) -> list[str]:
+    """`short1`, `short2`... rendus pour ce job (pas la compilation 9:16 `<job>_shorts.mp4`)."""
+    keys = [
+        p.stem.rsplit("_", 1)[1]
+        for p in Path(files_dir).glob(f"{job_id}_short*.mp4")
+        if re.fullmatch(rf"{re.escape(job_id)}_short\d+", p.stem)
+    ]
+    return sorted(keys, key=lambda k: int(k[5:]))
+
+
 def _resolve_keys(profile: ChannelProfile, files_dir: Path, job_id: str, video: str) -> list[str]:
-    shorts = sorted(
-        (p.stem.rsplit("_", 1)[1] for p in files_dir.glob(f"{job_id}_short*.mp4")),
-        key=lambda k: int(k[5:]) if k[5:].isdigit() else 0,
-    )
+    shorts = short_keys(files_dir, job_id)
     if video == "youtube":
         return ["youtube"]
     if video == "shorts":
@@ -343,7 +350,8 @@ def _plan_one(
     if tags:
         snippet["tags"] = tags
     status: dict[str, Any] = {
-        # un publishAt impose private : YouTube bascule la vidéo en public à l'heure dite
+        # programmée (forcément public, vérifié plus haut) : envoyée private, YouTube la rend
+        # publique à publishAt
         "privacyStatus": "private" if publish_at else privacy,
         "selfDeclaredMadeForKids": cfg.made_for_kids,
     }
@@ -418,6 +426,14 @@ def publish_job(
         raise MinavioError(f"Confidentialité '{privacy}' inconnue : private, unlisted ou public.")
     when = cfg.schedule_at if schedule_at is None else schedule_at
     publish_at = None if when in (None, "", "now") else next_occurrence(when, now)
+    if publish_at and privacy != "public":
+        # publishAt rend la vidéo PUBLIQUE à l'heure dite : incompatible avec private/unlisted.
+        raise MinavioError(
+            f"Programmation à {when} demandée avec la confidentialité '{privacy}' : une vidéo "
+            "programmée devient publique à l'heure dite. Choisis --privacy public pour la "
+            "programmer, ou --at now (ou schedule_at: null dans le profil) pour la garder "
+            f"{privacy}."
+        )
     copy = _read_json(work / "copy.json")
     if not isinstance(copy, dict):
         if not (overrides and overrides.get("title")):
@@ -430,7 +446,7 @@ def publish_job(
     keys = _resolve_keys(profile, files_dir, job_id, video)
     if not keys:
         raise MinavioError(f"Aucune vidéo à publier dans {files_dir} pour le job {job_id}.")
-    n_shorts = len(list(files_dir.glob(f"{job_id}_short*.mp4")))
+    n_shorts = len(short_keys(files_dir, job_id))
     plans = [
         _plan_one(
             k,
