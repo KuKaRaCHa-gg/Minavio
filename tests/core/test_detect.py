@@ -190,3 +190,72 @@ def test_speech_mocked(monkeypatch, profile, tmp_path):
     monkeypatch.setattr("minavio.core.audio.vad.detect_speech", lambda path, thr, ms: [(1.0, 3.0)])
     hs = detect.run_detectors([Path("x.mp4")], only(profile, DetectorRef(name="speech")))
     assert len(hs) == 1 and hs[0].label == "speech" and (hs[0].start, hs[0].end) == (1.0, 3.0)
+
+
+# --- scene_change : PySceneDetect vs repli FFmpeg ---
+
+
+@pytest.fixture(scope="module")
+def hard_cuts_video(tmp_path_factory) -> Path:
+    """3 plans très différents de 2 s : coupes franches à 2.0 s et 4.0 s."""
+    out = tmp_path_factory.mktemp("cuts") / "cuts.mp4"
+    ff(
+        *("-f", "lavfi", "-i", f"testsrc2=s={W}x{H}:r=30:d=2"),
+        *("-f", "lavfi", "-i", f"mandelbrot=s={W}x{H}:r=30"),
+        *("-f", "lavfi", "-i", f"smptebars=s={W}x{H}:r=30:d=2"),
+        *("-filter_complex", "[1:v]trim=duration=2,setpts=PTS-STARTPTS[b];[0:v][b][2:v]concat=n=3"),
+        *("-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", str(out)),
+    )
+    return out
+
+
+@pytest.fixture(scope="module")
+def fast_pan_video(tmp_path_factory) -> Path:
+    """Panoramique rapide continu (200 px/s) sur un plan unique : aucune coupe."""
+    out = tmp_path_factory.mktemp("pan") / "pan.mp4"
+    ff(
+        *("-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=4"),
+        *("-vf", f"crop={W}:{H}:x='t*200':y=100"),
+        *("-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", str(out)),
+    )
+    return out
+
+
+def _cut_times(hs: list[Highlight]) -> list[float]:
+    return sorted(round((h.start + h.end) / 2, 1) for h in hs)
+
+
+@pytest.mark.parametrize("backend", ["scenedetect", "opencv", "auto"])
+def test_scene_change_hard_cuts(hard_cuts_video, profile, backend):
+    if backend != "opencv":
+        pytest.importorskip("scenedetect")
+    params = {"backend": backend, "window_s": 0.5}
+    p = only(profile, DetectorRef(name="scene_change", params=params))
+    hs = detect.run_detectors([hard_cuts_video], p)
+    assert _cut_times(hs) == pytest.approx([2.0, 4.0], abs=0.1)
+    assert all(0 < h.score <= 1 and h.label == "scene_change" for h in hs)
+
+
+def test_scene_change_scenedetect_ignores_fast_pan(fast_pan_video, profile):
+    pytest.importorskip("scenedetect")
+    p = only(profile, DetectorRef(name="scene_change", params={"backend": "scenedetect"}))
+    assert detect.run_detectors([fast_pan_video], p) == []
+
+
+def test_scene_change_falls_back_without_scenedetect(hard_cuts_video, profile, monkeypatch, caplog):
+    from minavio.core.detect import scene_change as sc
+
+    monkeypatch.setattr(sc, "_has_scenedetect", lambda: False)
+    p = only(profile, DetectorRef(name="scene_change", params={"window_s": 0.5}))
+    with caplog.at_level(logging.INFO, logger="minavio.detect"):
+        hs = detect.run_detectors([hard_cuts_video], p)
+    assert _cut_times(hs) == pytest.approx([2.0, 4.0], abs=0.1)
+    assert "scenedetect absent" in caplog.text
+
+
+def test_scene_change_forced_scenedetect_missing_is_skipped(hard_cuts_video, profile, monkeypatch):
+    from minavio.core.detect import scene_change as sc
+
+    monkeypatch.setattr(sc, "_has_scenedetect", lambda: False)
+    p = only(profile, DetectorRef(name="scene_change", params={"backend": "scenedetect"}))
+    assert detect.run_detectors([hard_cuts_video], p) == []
