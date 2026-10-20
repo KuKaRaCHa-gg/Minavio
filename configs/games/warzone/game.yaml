@@ -1,0 +1,22 @@
+# Textes OCR : médailles et bannières. Libellés FR à confirmer en jeu.
+# Médailles Double Kill / Triple Kill / Quad Feed et Squad Wipe : citées par des wikis, intitulés exacts à confirmer.
+id: warzone
+name: Warzone
+genre: battle_royale
+modes: [pvp, coop]
+combo_window_s: 6.0
+ui_templates: []
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    multi_kill:
+      - DOUBLE KILL
+      - TRIPLE KILL
+      - QUAD FEED
+    team_wipe:
+      - SQUAD WIPE          # à confirmer
+      - SQUAD WIPED         # à confirmer
+    win:
+      - VICTORY             # à confirmer (bannière de fin)
+      - VICTOIRE            # à confirmer

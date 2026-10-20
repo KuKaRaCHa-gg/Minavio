@@ -1,0 +1,30 @@
+# Textes OCR : bannières d'annonce (centre haut) et écran de fin. Libellés FR à confirmer.
+id: league_of_legends
+name: League of Legends
+genre: moba
+modes: [pvp]
+combo_window_s: 10.0   # le compteur de multi-kill LoL laisse ~10 s entre deux kills
+ui_templates: []
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    pentakill:
+      - PENTAKILL
+      - PENTA KILL
+    multi_kill:
+      - DOUBLE KILL
+      - TRIPLE KILL
+      - QUADRA KILL
+      - QUADRAKILL
+    ace:
+      - ACE                 # à confirmer (bannière quand toute l'équipe adverse est morte)
+    first_blood:
+      - FIRST BLOOD
+      - PREMIER SANG        # à confirmer
+    victory:
+      - VICTORY
+      - VICTOIRE            # à confirmer
+    defeat:
+      - DEFEAT
+      - DÉFAITE             # à confirmer

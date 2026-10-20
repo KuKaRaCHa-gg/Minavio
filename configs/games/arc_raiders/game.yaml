@@ -1,0 +1,15 @@
+# Aucun libellé d'écran vérifié (recherche web sans résultat) : tout est à confirmer sur captures.
+# Si rien n'est confirmé, vider keywords : l'OCR saute alors le jeu (audio/vision seuls).
+id: arc_raiders
+name: ARC Raiders
+genre: extraction_shooter
+modes: [pvp, pve, coop]
+combo_window_s: 8.0
+ui_templates: []
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    extraction:
+      - EXTRACTION SUCCESSFUL   # à confirmer
+      - EXTRACTION RÉUSSIE      # à confirmer
