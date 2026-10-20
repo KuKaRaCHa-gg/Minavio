@@ -71,7 +71,9 @@ def _rms_db(path: Path, af: str) -> float:
 
 
 def _band_db(path: Path, freq: int) -> float:
-    return _rms_db(path, f"bandpass=f={freq}:width_type=h:w=60")
+    # 3 passe-bandes en cascade : un seul (ordre 2) laisse fuir un sinus voisin de ~13 dB seulement.
+    band = f"bandpass=f={freq}:width_type=h:w=60"
+    return _rms_db(path, ",".join([band] * 3))
 
 
 def _duration_ts(path: Path) -> tuple[int, int, int]:
