@@ -16,7 +16,8 @@ audio = ["librosa>=0.10", "silero-vad>=5.1", "onnxruntime>=1.18"]
 asr = ["faster-whisper>=1.0"]
 hype = ["panns-inference>=0.1", "torch>=2.3"]
 ui = ["gradio>=6,<7"]
-all = ["minavio[vision,audio,asr,hype,ui]"]
+cloud = ["anthropic>=1"]
+all = ["minavio[vision,audio,asr,hype,ui,cloud]"]
 
 [project.scripts]
 minavio = "minavio.cli:app"
