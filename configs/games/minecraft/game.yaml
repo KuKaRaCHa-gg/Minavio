@@ -1,0 +1,32 @@
+id: minecraft
+name: Minecraft
+genre: sandbox
+modes: [solo, coop, pve]
+combo_window_s: 5.5
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    death:
+      - You Died!
+      - Vous êtes mort !
+      - was slain by
+      - a été tué par
+      - fell from a high place
+      - est tombé de haut
+    discovery:
+      - New Recipes Unlocked!
+      - Nouvelles recettes déverrouillées !
+    achievement:
+      - Advancement Made!
+      - Progrès !
+      - Goal Reached!
+      - Objectif atteint !
+      - Challenge Complete!
+      - Défi relevé !
+    boss_kill:
+      - Free the End
+      - Libérer l'End
+      - The Next Generation
+      - La nouvelle génération
+ui_templates: []

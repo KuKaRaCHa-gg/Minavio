@@ -1,0 +1,31 @@
+id: elden_ring
+name: Elden Ring
+genre: soulslike
+modes: [solo, pve, coop]
+combo_window_s: 10.0
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    boss_kill:
+      - ENEMY FELLED
+      - ENNEMI TERRASSÉ
+      - GREAT ENEMY FELLED
+      - ENNEMI REDOUTABLE TERRASSÉ
+      - LEGEND FELLED
+      - LÉGENDE TERRASSÉE
+      - DEMIGOD FELLED
+      - DEMI-DIEU TERRASSÉ
+    death:
+      - YOU DIED
+      - VOUS ÊTES MORT
+    discovery:
+      - LOST GRACE DISCOVERED
+      - SITE DE GRÂCE DÉCOUVERT
+    victory:
+      - HOST OF FINGERS DEFEATED
+      - HÔTE DES DOIGTS VAINCU
+    achievement:
+      - achievement unlocked # libellé plateforme (Steam/Xbox/PlayStation), pas un bandeau HUD garanti
+      - succès déverrouillé # traduction plateforme variable selon l'OS
+ui_templates: []
