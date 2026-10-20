@@ -1,0 +1,41 @@
+id: phasmophobia
+name: Phasmophobia
+genre: horror
+modes: [coop, solo, pve]
+combo_window_s: 8.5
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    death:
+      - killed by the ghost
+      - tué par le fantôme
+      - dead
+      - mort
+    team_wipe:
+      - all investigators died
+      # Texte incertain : formulation dépend du tableau de fin.
+      - toute l'équipe est morte
+      - no one survived
+      - personne n'a survécu
+    extraction:
+      - leave the contract
+      - quitter le contrat
+      - return to truck
+      - retour au camion
+    victory:
+      - ghost identified
+      - fantôme identifié
+      - contract complete
+      - contrat terminé
+    jumpscare:
+      - ghost event
+      - événement fantôme
+      - hunt started
+      - chasse lancée
+    funny:
+      - interaction
+      # Texte incertain : déclencheur sonore plus fréquent que texte.
+      - blague de lobby
+      - panic scream
+ui_templates: []
