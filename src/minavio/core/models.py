@@ -85,6 +85,26 @@ class SfxCue(_Model):
     gain_db: float = Field(default=0, le=12)
 
 
+class ThumbnailCandidate(_Model):
+    """Image extraite d'une source, notée avant le choix final des miniatures."""
+
+    source: Path
+    t: float = Field(ge=0)  # temps source
+    image: Path  # PNG extrait (work/<job>/thumbs/)
+    score: float = Field(ge=0, le=1)
+    label: str | None = None  # label du moment (kill, laugh…)
+    signals: dict[str, float] = Field(default_factory=dict)  # sharpness, face, motion…
+
+
+class ThumbnailChoice(_Model):
+    """Composition choisie : 1 (hero), 2 (split) ou 3 (collage) images + texte."""
+
+    layout: str
+    images: list[ThumbnailCandidate] = Field(min_length=1, max_length=3)
+    text: str
+    reason: str | None = None
+
+
 class Chapter(_Model):
     start: float = Field(ge=0)  # secondes de la timeline rendue
     title: str

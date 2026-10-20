@@ -74,13 +74,37 @@ class DetectorRef(_Model):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+ProviderKind = Literal["local", "anthropic", "google", "openai_compat"]
+
+
+class LlmProvider(_Model):
+    """Un fournisseur LLM. Les clés ne sont JAMAIS dans le YAML : seulement le nom de la variable
+    d'environnement (ou du fichier de secrets local, cf. `minavio.config.secrets`)."""
+
+    kind: ProviderKind = "local"
+    model: str | None = None  # None = défaut du fournisseur (cf. minavio.llm.providers)
+    vision_model: str | None = None  # modèle pour les images (miniatures) ; None = défaut / aucun
+    base_url: str | None = None  # None = défaut du fournisseur ; obligatoire pour openai_compat
+    api_key_env: str | None = None  # None = ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY
+    effort: Literal["low", "medium", "high"] | None = None  # anthropic : effort de raisonnement
+
+    @model_validator(mode="after")
+    def _check_compat(self) -> LlmProvider:
+        if self.kind == "openai_compat" and not (self.base_url and self.model):
+            raise ValueError("openai_compat exige base_url et model")
+        return self
+
+
 class LlmSettings(_Model):
     enabled: bool = True
+    # Fournisseur local implicite (utilisé si `providers` est vide) : rétrocompatible.
     base_url: str = "http://localhost:11434/v1"
     model: str = "qwen3:30b-a3b"
     temperature: float = Field(default=0.2, ge=0, le=2)
     prompt: str  # nom d'un fichier de src/minavio/llm/prompts/ sans extension
     max_highlights: int = Field(default=10, gt=0)
+    # Essayés dans l'ordre : le premier joignable sert (ex. local puis Claude en secours).
+    providers: list[LlmProvider] = Field(default_factory=list)
 
 
 class CaptionStyle(_Model):
@@ -166,6 +190,32 @@ class ShortsSettings(_Model):
     format: str = "shorts"  # nom d'un `outputs[]` 9:16 du profil
 
 
+ThumbLayout = Literal["hero", "split", "collage"]
+
+
+class ThumbnailFormat(_Model):
+    name: str  # ex. "youtube", "short"
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+
+
+class ThumbnailSettings(_Model):
+    """Miniatures / visuels générés depuis les meilleures images du montage."""
+
+    enabled: bool = False
+    count: int = Field(default=3, ge=1, le=6)  # variantes (A/B test YouTube)
+    layouts: list[ThumbLayout] = Field(default_factory=lambda: ["hero", "split", "collage"])
+    formats: list[ThumbnailFormat] = Field(
+        default_factory=lambda: [
+            ThumbnailFormat(name="youtube", width=1280, height=720),
+            ThumbnailFormat(name="short", width=1080, height=1920),
+        ]
+    )
+    candidates: int = Field(default=12, ge=3, le=40)  # images présélectionnées avant le choix final
+    max_words: int = Field(default=4, ge=1, le=8)  # texte de la miniature
+    use_vision_llm: bool = True  # juge visuel (Qwen-VL local, Claude, Gemini) ; sinon heuristique
+
+
 class ChannelProfile(_Model):
     id: str
     display_name: str
@@ -181,6 +231,7 @@ class ChannelProfile(_Model):
     framing: FramingSettings = Field(default_factory=FramingSettings)
     shorts: ShortsSettings = Field(default_factory=ShortsSettings)
     chapters: bool = False  # chapitres YouTube dans out/<profil>/<job>_chapters.txt
+    thumbnails: ThumbnailSettings = Field(default_factory=ThumbnailSettings)
 
 
 class UiTemplate(_Model):
