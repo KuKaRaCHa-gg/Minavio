@@ -150,6 +150,7 @@ def hype(sources: list[Path], params: dict, profile: ChannelProfile) -> list[Hig
                 if end > start:
                     signals = {nm: round(float(raw[r, peak_i]), 3) for r, nm in enumerate(names)}
                     signals["fused"] = round(peak, 3)
+                    signals["peak_t"] = round((peak_i + 0.5) * window_s, 3)  # temps source
                     out.append(
                         Highlight(
                             source=src,

@@ -131,6 +131,11 @@ def template_match(sources: list[Path], params: dict, profile: ChannelProfile) -
                             if multi
                             else f"{best.name} ({best.score:.2f}) à {best.t:.1f}s"
                         ),
+                        # peak_t = dernier kill du combo (le moment décisif), temps source.
+                        signals={
+                            "kills": float(kills),
+                            "peak_t": round(grp[-1].t if multi else best.t, 3),
+                        },
                     )
                 )
     return out

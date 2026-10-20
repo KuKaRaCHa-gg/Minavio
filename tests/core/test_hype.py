@@ -216,3 +216,17 @@ def test_pitch_blocks_match_unsplit_pyin_and_skip_silence(monkeypatch):
     calls.clear()
     assert np.isnan(prosody._pitch_f0(np.zeros(70 * sr, np.float32))).all()
     assert calls == []
+
+
+def test_merge_peak_t_comes_from_best_member():
+    from pathlib import Path
+
+    from minavio.core.detect.registry import merge_highlights
+    from minavio.core.models import Highlight
+
+    a = Highlight(source=Path("a.mp4"), start=0, end=6, score=0.9, label="multi_kill",
+                  detector="template_match", signals={"kills": 2, "peak_t": 3.2})  # fmt: skip
+    b = Highlight(source=Path("a.mp4"), start=4, end=8, score=0.5, label="scream",
+                  detector="hype", signals={"peak_t": 5.5})  # fmt: skip
+    (m,) = merge_highlights([a, b])
+    assert m.signals["peak_t"] == 3.2 and m.signals["kills"] == 2
