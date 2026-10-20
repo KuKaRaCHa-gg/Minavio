@@ -1,0 +1,28 @@
+id: hades_2
+name: Hades II
+genre: roguelike
+modes: [solo, pve]
+combo_window_s: 4.5
+killfeed:
+  roi: null
+  player_names: []
+  keywords:
+    victory:
+      - CLEARED
+      - VAINCU # traduction FR à confirmer sur build localisée
+      - VANQUISHED # wording rencontré sur certains ennemis, à confirmer selon version
+      - TERRASSÉ # équivalent FR probable, à confirmer
+    death:
+      - DEFEAT
+      - DÉFAITE
+      - DEATH DEFIANCE
+      - DÉFIANCE À LA MORT
+    discovery:
+      - NEW BOON
+      - NOUVEAU BIENFAIT
+      - NEW INCANTATION
+      - NOUVELLE INCANTATION
+    achievement:
+      - objective complete # libellé objectif à confirmer (EA)
+      - objectif accompli # traduction FR à confirmer (EA)
+ui_templates: []
