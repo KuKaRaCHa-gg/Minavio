@@ -291,3 +291,7 @@ Pour refaire des miniatures d'un job existant :
 | `MINAVIO_LLM_BASE_URL` | `llm.base_url` du profil |
 | `MINAVIO_LLM_MODEL` | `llm.model` du profil |
 | `MINAVIO_CONFIG_DIR` | dossier `configs/` à lire à la place du dépôt |
+
+## Préréglages et thèmes (`theme_preset`)
+
+Un préréglage utilisateur est un profil de chaîne : `UserPreset` est un alias de `ChannelProfile`, sans second modèle. `theme_preset` applique l'un des thèmes nommés de `minavio.config.presets.THEMES` : `retro_pixel` (fonte pixel, bas), `tech_minimal` (propre, bas), `streamer_vibrant` (pixel, centre) et `neutral` (sobre). Un thème ne remplit que les champs que le YAML n'écrit pas (`motion.captions.style|position`, `motion.theme.primary|accent|font`) : une valeur écrite gagne toujours. Pour créer un profil à partir de la base générique : `minavio profiles new <id> [--from default_vlog] [--name "Ma chaîne"]` (alias : `minavio preset create`). La commande affiche le chemin du YAML créé ; l'éditer, puis lancer `minavio profiles validate`.

@@ -39,6 +39,8 @@ llm:
   prompt: tech_facts
   max_highlights: 6
 
+theme_preset: tech_minimal
+
 motion:
   theme: { primary: "#0A84FF", accent: "#30D158", font: "Press Start 2P" }
   templates: [title, popup, progress_bar, captions]

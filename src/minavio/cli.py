@@ -12,6 +12,7 @@ import typer
 from typer.core import TyperGroup
 
 from minavio.config import list_games, list_profiles, load_game, load_profile
+from minavio.config.presets import create_preset
 from minavio.config.schema import ChannelProfile
 from minavio.errors import MinavioError
 
@@ -88,6 +89,41 @@ def profiles_validate() -> None:
             typer.secho(f"FAIL  {pid}\n{e}", fg="red", err=True)
     if failed:
         raise typer.Exit(1)
+
+
+def _create_preset_cli(new_id: str, base: str, name: str | None) -> None:
+    try:
+        path = create_preset(new_id, base=base, display_name=name)
+    except MinavioError as e:
+        raise _fail(e) from e
+    typer.secho(f"Profil créé : {path}", fg="green")
+    typer.echo(
+        "Éditez ce fichier (nom, détecteurs, theme_preset) puis lancez `minavio profiles validate`."
+    )
+
+
+@profiles.command("new")
+def profiles_new(
+    new_id: Annotated[str, typer.Argument(help="Identifiant : a-z, 0-9, '_'.")],
+    from_: Annotated[str, typer.Option("--from", help="Profil de base à copier.")] = "default_vlog",
+    name: Annotated[str | None, typer.Option("--name", help="Nom affiché de la chaîne.")] = None,
+) -> None:
+    """Crée `configs/channels/<id>.yaml` à partir d'une base."""
+    _create_preset_cli(new_id, from_, name)
+
+
+preset = typer.Typer(no_args_is_help=True, help="Alias de `profiles new`.")
+app.add_typer(preset, name="preset")
+
+
+@preset.command("create")
+def preset_create(
+    new_id: Annotated[str, typer.Argument(help="Identifiant : a-z, 0-9, '_'.")],
+    from_: Annotated[str, typer.Option("--from", help="Profil de base à copier.")] = "default_vlog",
+    name: Annotated[str | None, typer.Option("--name", help="Nom affiché de la chaîne.")] = None,
+) -> None:
+    """Crée un préréglage (même fonction que `profiles new`)."""
+    _create_preset_cli(new_id, from_, name)
 
 
 @app.command("schema")

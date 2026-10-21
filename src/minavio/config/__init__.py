@@ -61,7 +61,9 @@ def load_profile(profile_id: str, config_dir: Path = CONFIG_DIR) -> ChannelProfi
         raise ConfigError(f"{path} : id '{profile.id}' ≠ nom de fichier '{profile_id}'")
     for game_id in profile.games:
         load_game(game_id, config_dir)
-    return profile
+    from minavio.config.presets import apply_theme  # import local : --help reste léger
+
+    return apply_theme(profile)
 
 
 def list_games(config_dir: Path = CONFIG_DIR) -> list[str]:

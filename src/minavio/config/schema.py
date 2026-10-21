@@ -281,6 +281,10 @@ class ChannelProfile(_Model):
     chapters: bool = False  # chapitres YouTube dans out/<profil>/<job>_chapters.txt
     thumbnails: ThumbnailSettings = Field(default_factory=ThumbnailSettings)
     publish: PublishSettings = Field(default_factory=PublishSettings)
+    # Thème nommé (cf. minavio.config.presets.THEMES) : remplit les champs non écrits en YAML.
+    theme_preset: Literal["retro_pixel", "tech_minimal", "streamer_vibrant", "neutral"] | None = (
+        None
+    )
 
 
 def _check_roi(roi: tuple[float, float, float, float] | None) -> None:

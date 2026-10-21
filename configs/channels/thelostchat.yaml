@@ -41,6 +41,8 @@ llm:
   prompt: stream_bestof
   max_highlights: 15
 
+theme_preset: streamer_vibrant
+
 motion:
   theme: { primary: "#BF5AF2", accent: "#FF9F0A", font: "Press Start 2P" }
   templates: [title, reaction, captions]

@@ -1,0 +1,48 @@
+# Profil générique (base de `minavio profiles new <id>` / `minavio preset create`).
+# Copier, puis changer id/display_name ; ne rien écrire d'autre n'est pas nécessaire.
+# Champs clés : cf. configs/bytetricks.yaml et configs/README.md (section « Préréglages »).
+#   theme_preset : thème nommé (retro_pixel, tech_minimal, streamer_vibrant, neutral).
+#                  Il ne remplit que les champs absents du YAML ; une valeur écrite gagne.
+#   detection    speech + scene_change + hype : pas de jeu, pas de vision.
+id: default_vlog
+display_name: Vlog générique
+content_type: stream_bestof  # type de contenu le plus neutre (pas de jeu, pas de tech)
+description: Montage générique (vlog, interview, contenu parlé) sans jeu ni template de jeu.
+
+outputs:
+  - { name: youtube, aspect: "16:9", width: 1920, height: 1080, fps: 30, reframe: none }
+  - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 30, reframe: blur_pad, max_duration_s: 59 }
+
+detection:
+  - { name: speech, weight: 1.0 }                # le fil narratif vient de la voix
+  - { name: scene_change, weight: 0.5, params: { threshold: 0.35 } }
+  - { name: hype, weight: 0.5 }                  # pics d'intensité vocale/audio combinés
+
+audio:
+  beat_sync: true
+  loudness_lufs: -14
+  ducking: { enabled: true, music_gain_db: -20 }
+  denoise: { enabled: true }
+
+llm:
+  prompt: stream_bestof
+  max_highlights: 6
+
+theme_preset: neutral
+
+motion:
+  templates: [title, popup, progress_bar, captions]
+
+editing:
+  pacing: dynamic
+  target_duration_s: 300
+  min_clip_s: 1.5
+  max_clip_s: 12
+  pre_roll_s: 0.3
+  post_roll_s: 0.3
+  autocut: { enabled: true, min_silence_s: 0.5, punch_in: 1.08 }
+
+thumbnails: { enabled: true, count: 3, layouts: [hero, split], max_words: 4 }
+
+# Publication YouTube : jamais automatique (`minavio publish <profil> <job>`).
+publish: { category_id: "22" }  # 22 = People & Blogs

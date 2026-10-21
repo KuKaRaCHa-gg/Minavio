@@ -53,6 +53,8 @@ llm:
     - { kind: local }
     - { kind: anthropic, effort: low }
 
+theme_preset: retro_pixel
+
 motion:
   theme: { primary: "#FF3B30", accent: "#FFD60A", font: "Press Start 2P" }
   templates: [title, popup, reaction, captions, kill_counter, rewind, rank_card]
