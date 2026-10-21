@@ -30,7 +30,7 @@ Choisir l'agent selon le domaine touché ; une tâche qui touche plusieurs domai
 | Revue avant merge | `orchestrator` | inherit | Doit voir les interactions entre modules |
 | `filter_complex` FFmpeg, reframe, beat-sync, ducking, détecteurs OpenCV | `media-pipeline-agent` | sonnet | Logique média dense, bugs subtils |
 | Templates Remotion, animations, sous-titres animés | `motion-design-agent` | sonnet | React/TS + timing visuel |
-| Client Qwen, prompts, ranking, parsing JSON robuste | `local-llm-agent` | sonnet | Fenêtrage de contexte et validation des sorties du LLM local |
+| Client Qwen, prompts, ranking, parsing JSON robuste | `local-llm-agent` | haiku | Fenêtrage de contexte et validation des sorties du LLM local |
 | Commandes CLI, YAML de chaîne, nouveau jeu | `cli-config-agent` | haiku | Mécanique, schéma déjà fixé |
 | Recherche dans le code (« où est X ? ») | `Explore` | haiku | Lecture seule, bon marché |
 

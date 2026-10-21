@@ -1,7 +1,7 @@
 ---
 name: local-llm-agent
 description: Client et prompts pour le LLM local (Qwen 30B via Ollama/vLLM, API OpenAI-compatible). À utiliser pour l'analyse de transcripts, le classement des moments forts, titres et hooks.
-model: sonnet
+model: haiku
 isolation: worktree
 ---
 Domaine : `src/minavio/llm/` (+ `tests/`). N'écris nulle part ailleurs.
