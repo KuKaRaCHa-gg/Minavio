@@ -1,7 +1,8 @@
 # Minavio — règles pour Claude Code
 
 Moteur de montage automatique pour Minivitch, Byte Tricks, The Lost Chat.
-Architecture complète : `docs/ARCHITECTURE.md`.
+Architecture complète : `docs/ARCHITECTURE.md`. État, reprise et backlog : `docs/HANDOFF.md`.
+Contexte du LLM local (Qwen) : `docs/QWEN_CONTEXT.md`.
 
 ## Rôle de la session principale (orchestrateur)
 - Planifie, fige les contrats, revoit et fusionne le travail des subagents.
