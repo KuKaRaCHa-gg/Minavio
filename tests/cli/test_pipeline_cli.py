@@ -116,14 +116,16 @@ class Fakes:
             self._rec("sfx")
             return []
 
-        def memes(timeline, highlights, by_source, profile, use_llm=False):
+        def memes(timeline, highlights, transcripts, profile, use_llm=False):
+            # Même contrat que minavio.memes.plan.plan_memes : liste de segments -> dict.
+            assert isinstance(transcripts, list)
             self._rec("memes")
             self.memes_use_llm.append(use_llm)
-            return SimpleNamespace(
-                sfx=[SfxCue(at=1.0, sound="hit")],
-                effects=[Effect(kind="shake", at=0.5)],
-                overlays=[Overlay(template="media", start=1, duration=1, props={"path": "x"})],
-            )
+            return {
+                "sfx": [SfxCue(at=1.0, sound="hit")],
+                "effects": [Effect(kind="shake", at=0.5)],
+                "overlays": [Overlay(template="media", start=1, duration=1, props={"path": "x"})],
+            }
 
         def chapters(timeline, highlights, profile):
             self._rec("chapters")

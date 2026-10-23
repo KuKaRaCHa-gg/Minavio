@@ -479,12 +479,13 @@ def _apply_memes(
         )
 
     def compute() -> Timeline:
-        res = _api("plan_memes")(timeline, highlights, by_source or {}, profile, use_llm=use_llm)
+        segments = [s for segs in (by_source or {}).values() for s in segs]
+        res = _api("plan_memes")(timeline, highlights, segments, profile, use_llm=use_llm)
         return timeline.model_copy(
             update={
-                "sfx": [*timeline.sfx, *res.sfx],
-                "effects": [*timeline.effects, *res.effects],
-                "overlays": [*timeline.overlays, *res.overlays],
+                "sfx": [*timeline.sfx, *res.get("sfx", [])],
+                "effects": [*timeline.effects, *res.get("effects", [])],
+                "overlays": [*timeline.overlays, *res.get("overlays", [])],
             }
         )
 
