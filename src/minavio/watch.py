@@ -17,6 +17,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from minavio.errors import MinavioError
+from minavio.integrations.notify import notify
 
 log = logging.getLogger("minavio.watch")
 
@@ -45,6 +46,49 @@ def _default_run(music: Path | None) -> Callable[[str, list[Path]], object]:
         return run_job(profile_id, paths, music=music)
 
     return _run
+
+
+def _safe_job_id(profile_id: str, paths: list[Path]) -> str | None:
+    """Identifiant du job d'après ses entrées, pour un échec où `run_job` n'a rien renvoyé."""
+    try:
+        from minavio.config import load_profile
+        from minavio.pipeline import compute_job_id
+
+        return compute_job_id(load_profile(profile_id), paths)
+    except Exception:  # best effort : la notification d'échec ne doit pas échouer
+        return None
+
+
+def notify_job(
+    profile_id: str,
+    job_id: str | None,
+    outputs: list[Path] | None = None,
+    error: str | None = None,
+) -> list[str]:
+    """Notifie la fin d'un job (succès ou échec). Ne lève jamais ; ne publie jamais."""
+    try:
+        if error is not None:
+            first = (error.strip().splitlines() or ["erreur inconnue"])[0]
+            title = f"Minavio : échec · {profile_id}"
+            lines = [f"Job {job_id or 'inconnu'}", f"Erreur : {first}"]
+        else:
+            title = f"Minavio : montage terminé · {profile_id}"
+            lines = [f"Job {job_id or 'inconnu'}"]
+            names = [p.name for p in outputs or []]
+            lines.append("Sorties : " + (", ".join(names) if names else "aucune"))
+            if job_id:
+                lines.append(
+                    f"Publication : `minavio publish {profile_id} {job_id}` (jamais automatique)."
+                )
+        thumb = Path("out") / profile_id / f"{job_id}_thumb1_youtube.png" if job_id else None
+        return notify(
+            title,
+            "\n".join(lines),
+            file=thumb if thumb is not None and thumb.is_file() else None,
+        )
+    except Exception as e:
+        log.warning("Notification de fin de job non envoyée : %s", type(e).__name__)
+        return []
 
 
 class Watcher:
@@ -181,7 +225,7 @@ class Watcher:
         paths = [Path(k) for k in items]
         log.info("Montage de %d clip(s) (profil %s)", len(paths), self.profile_id)
         try:
-            self._run(self.profile_id, paths)
+            result = self._run(self.profile_id, paths)
         except Exception as e:  # le démon ne meurt jamais sur un job en échec
             msg = str(e) or type(e).__name__
             for key, (size, mtime) in items.items():
@@ -195,11 +239,21 @@ class Watcher:
                 "puis relance `minavio watch`.",
                 self.state_path,
             )
+            notify_job(
+                self.profile_id,
+                _safe_job_id(self.profile_id, paths),
+                error=msg,
+            )
             return
         for key, (size, mtime) in items.items():
             self._files[key] = {"size": size, "mtime": mtime, "status": "done"}
         self._save()
         log.info("Lot terminé : %d clip(s).", len(paths))
+        notify_job(
+            self.profile_id,
+            getattr(result, "job_id", None),
+            outputs=[Path(p) for p in getattr(result, "outputs", []) or []],
+        )
 
 
 def serve(watcher: Watcher, poll_s: float = 5) -> None:
