@@ -38,6 +38,16 @@ def resolve_sound(name: str, settings: SfxSettings) -> Path | None:
     return None
 
 
+def cue_path(cue: SfxCue, settings: SfxSettings) -> Path | None:
+    """Fichier d'une cue : `cue.path` (banque de memes) prioritaire sur le nom logique `sound`."""
+    if cue.path is not None:
+        if Path(cue.path).is_file():
+            return Path(cue.path)
+        log.warning("SFX %s introuvable : événement ignoré", cue.path)
+        return None
+    return resolve_sound(cue.sound, settings)
+
+
 def plan_sfx(timeline: Timeline, settings: SfxSettings) -> list[SfxCue]:
     """Cues SFX d'une timeline (`settings.enabled` est géré par le rendu / le pipeline).
 

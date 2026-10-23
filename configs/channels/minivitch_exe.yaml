@@ -1,0 +1,94 @@
+# Profil de chaîne (schéma : `minavio schema`, validation : `minavio profiles validate`).
+# Champs clés :
+#   games      ids de configs/games/<id>/ utilisés par le détecteur template_match.
+#   outputs    formats rendus (name, aspect, résolution, fps, reframe, max_duration_s) ;
+#              sélectionnables avec `minavio run --format <name|aspect>`.
+#   detection  détecteurs et poids (weight) qui pondèrent le score des highlights.
+#   audio      music_dir (musique choisie de façon déterministe), beat_sync, loudness, ducking.
+#   llm        prompt (fichier de src/minavio/llm/prompts/), max_highlights ;
+#              base_url/model surchargés par MINAVIO_LLM_BASE_URL / MINAVIO_LLM_MODEL.
+#   motion     theme (couleurs, fonte), templates Remotion, style des sous-titres mot-à-mot.
+#   editing    pacing, durée cible, bornes de clip, pre/post-roll autour de chaque moment ;
+#              editing.autocut coupe les silences (et recale la coupe sur le rythme de parole).
+#   framing    smoothing : lissage du suivi de cadrage (reframe face_track / action_track) ;
+#              facecam : détection et découpe de la facecam pour reframe split_facecam.
+#   Référence des blocs et détecteurs : configs/README.md.
+id: minivitch_exe
+display_name: "Minivitch .exe"
+content_type: gaming
+description: Moments chaotiques et clutchs sur jeux vidéo.
+games: [apex_legends]
+
+outputs:
+  - { name: youtube, aspect: "16:9", width: 1920, height: 1080, fps: 60, reframe: none }
+  - { name: shorts, aspect: "9:16", width: 1080, height: 1920, fps: 60, reframe: action_track, max_duration_s: 59 }
+
+detection:
+  - { name: killfeed_ocr, weight: 1.0 }          # lit le killfeed (OCR) : aucune capture requise
+  - { name: motion_intensity, weight: 0.6 }      # fusillades / mouvement soutenu
+  - { name: vision_scan, weight: 0.8, params: { mode: candidates } }  # le LLM vision juge les candidats
+  - { name: template_match, weight: 0.5 }        # optionnel : ignoré sans PNG dans games/*
+  - { name: audio_peak, weight: 0.6, params: { min_db_above_median: 12 } }
+  - { name: speech, weight: 0.4 }                # réactions vocales (cris, rires)
+  - { name: hype, weight: 0.8 }                  # pics d'intensité combinés
+  - { name: scene_change, weight: 0.3, params: { backend: auto } }  # changements de plan
+
+audio:
+  music_dir: assets/music/minivitch
+  beat_sync: true
+  loudness_lufs: -14
+  ducking: { enabled: true, music_gain_db: -16 }
+  sfx: { enabled: true }                         # whoosh / hit / boom / rewind (CC0, locaux)
+  # Retire la musique du jeu (Content ID) : garde voix + effets (Demucs, extra audio).
+  separation: { enabled: true, remove_music: true }
+
+llm:
+  prompt: gaming
+  max_highlights: 12
+  # EXEMPLE : local d'abord ; Claude n'intervient qu'en secours et seulement si une clé existe
+  # (ANTHROPIC_API_KEY ou `minavio llm set-key`). Payant, et envoie transcripts/images au cloud.
+  providers:
+    - { kind: local }
+    - { kind: anthropic, effort: low }
+
+theme_preset: retro_pixel
+
+motion:
+  theme: { primary: "#FF3B30", accent: "#FFD60A", font: "Press Start 2P" }
+  templates: [title, popup, reaction, captions, kill_counter, rewind]
+  captions: { enabled: true, word_by_word: true, position: bottom, style: pixel }
+
+editing:
+  pacing: hyper
+  target_duration_s: 480
+  min_clip_s: 2
+  max_clip_s: 20
+  pre_roll_s: 3.0     # contexte avant le clutch
+  post_roll_s: 1.5
+  cold_open: { enabled: true, duration_s: 2.5 }  # ouverture sur le meilleur pic, puis rewind
+  slowmo: { enabled: true, factor: 0.5, duration_s: 1.2 }  # ralenti sur l'instant du kill
+  # Le jeu fait du bruit (coups, musique, voix) : coupe légère, seuil d'énergie relevé.
+  autocut: { enabled: true, min_silence_s: 1.2, energy_margin_db: 4, punch_in: 1.0 }
+
+framing:
+  smoothing: { beta: 0.04, max_pan_per_s: 0.5 }  # plus réactif que le défaut
+
+# Chapitres YouTube (out/<profil>/<job>_chapters.txt), générés par le LLM local.
+chapters: true
+
+# Shorts : un par meilleur moment, en plus de la compilation (`minavio run --shorts N`).
+shorts: { per_highlight: 3, max_duration_s: 30, format: shorts }
+
+# Miniatures (out/<profil>/<job>_thumb<i>_<format>.png), `minavio thumbnails` pour les refaire.
+thumbnails: { enabled: true, count: 3, layouts: [hero, split, collage], max_words: 4 }
+
+# Publication YouTube : jamais automatique (`minavio publish <profil> <job>` ou onglet Publication).
+# Programmer (publique à 18:00) : privacy: public + schedule_at: "18:00". Privée par défaut.
+publish: { privacy: private, category_id: "20", schedule_at: null }
+
+# Montage ".exe" : memes (GIF, images, videos, sons) et effets ; limiteur anti-earrape actif.
+memes:
+  enabled: true
+  style: exe
+  providers: [local]
+  effects: [shake, zoom_punch, deep_fry, glitch, freeze, flash, bass_boost, error_popup]

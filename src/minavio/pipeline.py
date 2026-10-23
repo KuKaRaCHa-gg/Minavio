@@ -11,7 +11,9 @@ et le rendu garde l'audio d'origine.
 retenue (après `transcribe`, avant `timeline`) et ses plages conservées (`keep_spans`) sont passées
 à `plan_timeline`. En cas d'échec, un warning est émis et le montage se fait sans coupe de silences.
 
-`sfx` n'existe que si `profile.audio.sfx.enabled`. `chapters` n'existe que si `profile.chapters`
+`sfx` n'existe que si `profile.audio.sfx.enabled`. `memes` (après `sfx`, optionnelle, `memes.json`)
+n'existe que si `profile.memes.enabled` : sfx, effets et overlays de `minavio.memes`.
+`chapters` n'existe que si `profile.chapters`
 et que le LLM est actif (il appelle le LLM local). `shorts` produit, après les rendus principaux,
 une timeline dédiée par meilleur highlight (`profile.shorts.per_highlight`, ou `--shorts`) ; un
 short qui échoue donne un warning sans interrompre le job.
@@ -51,6 +53,7 @@ from minavio.core import healing
 from minavio.core.models import (
     REWIND_DURATION_S,
     Chapter,
+    Effect,
     Highlight,
     Moment,
     Overlay,
@@ -86,6 +89,7 @@ _API = {
     "format_chapters": "minavio.llm.chapters:format_chapters",
     "plan_timeline": "minavio.core.edit:plan_timeline",
     "plan_sfx": "minavio.core.sfx:plan_sfx",
+    "plan_memes": "minavio.memes.plan:plan_memes",
     "build_caption_overlays": "minavio.motion.captions:build_caption_overlays",
     "render_overlays": "minavio.motion.render:render_overlays",
     "render_timeline": "minavio.core.render:render_timeline",
@@ -418,8 +422,11 @@ def _decorate(
     profile: ChannelProfile,
     copy: dict[str, Any] | None,
     highlights: list[Highlight],
+    by_source: dict[Path, list[TranscriptSegment]] | None = None,
+    use_llm: bool = False,
 ) -> Timeline:
-    """Ajoute overlays (étape `<prefix>overlays`) puis SFX (`<prefix>sfx`, si activés)."""
+    """Ajoute overlays (`<prefix>overlays`), SFX (`<prefix>sfx`, si activés), puis memes/effets
+    « .exe » (`<prefix>memes`, si `profile.memes.enabled`)."""
     overlays: list[Overlay] = steps.run(
         f"{prefix}overlays",
         lambda: build_overlays(timeline, profile, copy, highlights),
@@ -439,7 +446,51 @@ def _decorate(
             default=[],
         )
         timeline = timeline.model_copy(update={"sfx": sfx})
+    if profile.memes.enabled:
+        timeline = _apply_memes(steps, prefix, timeline, profile, highlights, by_source, use_llm)
     return timeline
+
+
+def _apply_memes(
+    steps: _Steps,
+    prefix: str,
+    timeline: Timeline,
+    profile: ChannelProfile,
+    highlights: list[Highlight],
+    by_source: dict[Path, list[TranscriptSegment]] | None,
+    use_llm: bool,
+) -> Timeline:
+    """Étape `memes` (optionnelle) : fusionne sfx, effets et overlays de `plan_memes`."""
+
+    def dump(t: Timeline) -> Any:
+        return {
+            "sfx": _dump_models(t.sfx),
+            "effects": _dump_models(t.effects),
+            "overlays": _dump_models(t.overlays),
+        }
+
+    def load(d: Any) -> Timeline:
+        return timeline.model_copy(
+            update={
+                "sfx": [SfxCue.model_validate(x) for x in d["sfx"]],
+                "effects": [Effect.model_validate(x) for x in d["effects"]],
+                "overlays": [Overlay.model_validate(x) for x in d["overlays"]],
+            }
+        )
+
+    def compute() -> Timeline:
+        res = _api("plan_memes")(timeline, highlights, by_source or {}, profile, use_llm=use_llm)
+        return timeline.model_copy(
+            update={
+                "sfx": [*timeline.sfx, *res.sfx],
+                "effects": [*timeline.effects, *res.effects],
+                "overlays": [*timeline.overlays, *res.overlays],
+            }
+        )
+
+    return steps.run(
+        f"{prefix}memes", compute, dump=dump, load=load, optional=True, default=timeline
+    )
 
 
 def short_profile(profile: ChannelProfile) -> ChannelProfile:
@@ -639,7 +690,9 @@ def run_job(
 
     target = out_dir / profile.id
     target.mkdir(parents=True, exist_ok=True)
-    timeline = _decorate(steps, "", timeline, profile, copy, highlights)
+    timeline = _decorate(
+        steps, "", timeline, profile, copy, highlights, by_source=by_source, use_llm=llm_on
+    )
     timeline = _with_audio_tracks(timeline, audio_tracks)
 
     if chapters and profile.chapters:
@@ -728,6 +781,7 @@ def run_job(
                         beats=beats,
                         music=music_path,
                         audio_tracks=audio_tracks,
+                        use_llm=llm_on,
                         keep_spans=(
                             {h.source: keep_spans[h.source]}
                             if keep_spans and h.source in keep_spans
@@ -862,6 +916,7 @@ def _render_short(
     music: Path | None,
     keep_spans: dict[Path, list[tuple[float, float]]] | None,
     audio_tracks: dict[Path, Path] | None = None,
+    use_llm: bool = False,
 ) -> Path:
     """Timeline dédiée d'un highlight (overlays captions + kill_counter, sfx), puis rendu."""
     tl: Timeline = steps.run(
@@ -879,7 +934,16 @@ def _render_short(
     )
     if not tl.clips:
         raise MinavioError("montage vide")
-    tl = _decorate(steps, f"short{i}_", tl, profile, None, [h])
+    tl = _decorate(
+        steps,
+        f"short{i}_",
+        tl,
+        profile,
+        None,
+        [h],
+        by_source={h.source: transcript} if transcript else None,
+        use_llm=use_llm,
+    )
     tl = _with_audio_tracks(tl, audio_tracks or {})
     files = steps.run(
         f"short{i}_overlay_files",
