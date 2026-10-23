@@ -7,11 +7,22 @@ Aucun appel à une API cloud pendant un rendu.
 
 ## Installation (machine hôte)
 
+### Linux / macOS
+
 ```bash
 uv sync --all-extras                 # OpenCV, librosa, Silero VAD, faster-whisper, publication YouTube
 (cd motion && npm install)           # templates Remotion (Node ≥ 18)
 uv run minavio profiles validate
 ```
+
+### Windows
+
+- Installation en un clic (PowerShell 5.1+) : double-clic sur `scripts/install.bat`.
+- Le script `scripts/install.ps1` vérifie/installe via `winget` : `uv` (Astral), `FFmpeg`
+  (`Gyan.FFmpeg`) et `Node.js LTS`, propose `Ollama`, puis lance `uv sync --all-extras`
+  et `npm install` dans `motion/`.
+- Si Ollama est déjà installé (ou installé pendant le script), il propose aussi de télécharger
+  `qwen3:30b-a3b` et `qwen3-vl:8b` (plusieurs Go).
 
 LLM local : n'importe quel serveur OpenAI-compatible (Ollama, vLLM, LM Studio…).
 
