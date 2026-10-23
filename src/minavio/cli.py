@@ -42,6 +42,10 @@ publish = typer.Typer(
     help="Publication YouTube : `publish auth`, puis `publish <profil> <job_id>`.",
 )
 app.add_typer(publish, name="publish")
+memes = typer.Typer(
+    no_args_is_help=True, help="Banque de memes « .exe » (local, API optionnelles)."
+)
+app.add_typer(memes, name="memes")
 
 Verbose = Annotated[bool, typer.Option("--verbose", "-v", help="Logs DEBUG et traceback.")]
 
@@ -216,6 +220,94 @@ def llm_set_key(
     except MinavioError as e:
         raise _fail(e) from e
     typer.secho(f"{name} enregistrée ({mask(value.strip())}).", fg="green")
+
+
+def _meme_line(asset) -> str:
+    tags = ",".join(asset.tags) or "-"
+    return f"{asset.id:<28} {asset.kind:<6} {asset.license:<12} {tags:<30} {asset.path}"
+
+
+@memes.command("scan")
+def memes_scan() -> None:
+    """Indexe les médias déposés dans la banque perso (sans toucher aux téléchargements)."""
+    from minavio.memes.library import library_dir, refresh_index
+
+    root = library_dir()
+    try:
+        found = refresh_index(root)
+    except MinavioError as e:
+        raise _fail(e) from e
+    typer.secho(f"{len(found)} média(s) local(aux) indexé(s) dans {root}.", fg="green")
+
+
+@memes.command("search")
+def memes_search(
+    tags: Annotated[list[str], typer.Argument(metavar="TAGS...", help="Tags recherchés.")],
+    kind: Annotated[str | None, typer.Option(help="gif, image, video ou sound.")] = None,
+    restricted: Annotated[
+        bool, typer.Option("--restricted", help="Inclut les licences restreintes.")
+    ] = False,
+) -> None:
+    """Cherche des médias par tags dans la banque (licences sûres par défaut)."""
+    from minavio.config.schema import MemeSettings
+    from minavio.memes.library import search
+
+    settings = MemeSettings(allow_restricted_licenses=restricted)
+    try:
+        assets = search(tags, kind, settings)
+    except MinavioError as e:
+        raise _fail(e) from e
+    if not assets:
+        typer.echo("Aucun média correspondant.")
+    for asset in assets:
+        typer.echo(_meme_line(asset))
+
+
+@memes.command("fetch")
+def memes_fetch(
+    provider: Annotated[str, typer.Argument(metavar="FOURNISSEUR")],
+    query: Annotated[str, typer.Argument(metavar="REQUETE")],
+    kind: Annotated[str | None, typer.Option(help="gif, image, video ou sound.")] = None,
+    limit: Annotated[int, typer.Option(min=1, max=50)] = 5,
+) -> None:
+    """Télécharge des médias depuis une API (tenor, giphy, freesound, pixabay, pexels, imgflip)."""
+    from minavio.memes.providers import fetch
+
+    try:
+        assets = fetch(provider, query, kind, limit)
+    except MinavioError as e:
+        raise _fail(e) from e
+    typer.secho(f"{len(assets)} média(s) disponible(s) pour « {query} ».", fg="green")
+    for asset in assets:
+        typer.echo(_meme_line(asset))
+
+
+@memes.command("list")
+def memes_list(
+    kind: Annotated[str | None, typer.Option(help="gif, image, video ou sound.")] = None,
+) -> None:
+    """Liste la banque avec la licence de chaque média."""
+    from minavio.memes.library import is_license_allowed, library_dir, load_index
+
+    try:
+        assets = load_index(library_dir())
+    except MinavioError as e:
+        raise _fail(e) from e
+    shown = [a for a in assets if not kind or a.kind == kind]
+    if not shown:
+        typer.echo("Banque vide : `minavio memes scan` ou `minavio memes fetch ...`.")
+    for asset in shown:
+        restricted = not is_license_allowed(asset.license, allow_restricted=False)
+        typer.echo(_meme_line(asset) + ("  [restreinte]" if restricted else ""))
+
+
+@memes.command("set-key")
+def memes_set_key(
+    name: Annotated[str, typer.Argument(metavar="NOM", help="Ex. TENOR_API_KEY.")],
+    delete: Annotated[bool, typer.Option("--delete", help="Supprime la clé du fichier.")] = False,
+) -> None:
+    """Enregistre (saisie masquée) ou supprime une clé de fournisseur de memes."""
+    llm_set_key(name=name, delete=delete)
 
 
 @app.command("run")

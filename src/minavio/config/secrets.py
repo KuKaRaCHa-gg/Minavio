@@ -14,19 +14,32 @@ from pathlib import Path
 
 from minavio.errors import ConfigError
 
-KNOWN_KEYS = ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN")
+KNOWN_KEYS = (
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENAI_API_KEY",
+    "GITHUB_TOKEN",
+    "TENOR_API_KEY",
+    "GIPHY_API_KEY",
+    "FREESOUND_API_KEY",
+    "PIXABAY_API_KEY",
+    "PEXELS_API_KEY",
+)
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _loaded = False
+
+
+def config_root() -> Path:
+    """Racine de config : %APPDATA% sous Windows, sinon `$XDG_CONFIG_HOME` ou ~/.config."""
+    if os.name == "nt":
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
 
 
 def secrets_path() -> Path:
     if override := os.environ.get("MINAVIO_SECRETS_FILE"):
         return Path(override).expanduser()
-    if os.name == "nt":
-        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-    return base / "minavio" / "secrets.env"
+    return config_root() / "minavio" / "secrets.env"
 
 
 def _parse(path: Path) -> dict[str, str]:
