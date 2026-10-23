@@ -214,3 +214,13 @@ def test_heuristic_other_labels_get_default_punch(tmp_path: Path) -> None:
     profile = _profile(tmp_path)
     plan = plan_memes(_timeline(), [_hl(10.0, "clutch")], TRANSCRIPT, profile, use_llm=False)
     assert ("zoom_punch", 10.0) in {(e.kind, e.at) for e in plan["effects"]}
+
+
+def test_highlight_starting_in_cut_preroll_still_mapped(tmp_path: Path) -> None:
+    # Highlight 28-33 s : son début (28) est dans le clip 0-30 ; un highlight 55-62 commence avant
+    # le clip 60-90 (pre-roll coupé) : il doit être ramené au début du clip (t=30).
+    _library(tmp_path)
+    profile = _profile(tmp_path)
+    hl = Highlight(source=SRC, start=55, end=62, score=0.8, label="kill", detector="t")
+    plan = plan_memes(_timeline(), [hl], TRANSCRIPT, profile, use_llm=False)
+    assert ("zoom_punch", 30.0) in {(e.kind, e.at) for e in plan["effects"]}

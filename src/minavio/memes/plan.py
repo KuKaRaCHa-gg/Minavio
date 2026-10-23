@@ -70,9 +70,21 @@ def _moments(
     starts = timeline.clip_starts()
     out: list[_Moment] = []
     for h in highlights:
-        at = _to_timeline(timeline.clips, starts, h.source, h.start)
-        if at is None:  # moment non retenu dans le montage
-            continue
+        # Instant de référence : le pic s'il est connu, sinon le début ; ramené dans le clip qui
+        # chevauche le highlight (le début brut tombe souvent dans un pre-roll coupé).
+        ref = h.signals.get("peak_t", h.start)
+        at = _to_timeline(timeline.clips, starts, h.source, ref)
+        if at is None:
+            clip = next(
+                (c for c in timeline.clips if c.source == h.source and c.start < h.end
+                 and c.end > h.start),
+                None,
+            )  # fmt: skip
+            if clip is None:  # moment non retenu dans le montage
+                continue
+            at = _to_timeline(timeline.clips, starts, h.source, min(max(ref, clip.start), clip.end))
+            if at is None:
+                continue
         segs = [s for s in transcripts if s.source in (None, h.source)]
         excerpt = transcript_context(segs, h.start, h.end, MAX_EXCERPT_CHARS)
         out.append(_Moment(at=round(at, 2), label=h.label, excerpt=excerpt))
