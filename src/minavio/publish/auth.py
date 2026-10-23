@@ -21,9 +21,11 @@ from minavio.errors import MinavioError
 
 log = logging.getLogger("minavio.publish")
 
+ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"  # rapports de chaîne
 SCOPES = (
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",  # miniatures et playlists
+    ANALYTICS_SCOPE,
 )
 CLIENT_SECRET_NAME = "youtube_client_secret.json"
 TOKEN_NAME = "youtube_token.json"
