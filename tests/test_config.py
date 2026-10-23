@@ -16,6 +16,7 @@ def test_three_channel_profiles_are_valid():
         "bytetricks",
         "default_vlog",
         "minivitch",
+        "minivitch_exe",
         "minivitch_top10",
         "thelostchat",
     ]

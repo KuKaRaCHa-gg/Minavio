@@ -9,7 +9,15 @@ from typer.testing import CliRunner
 
 from minavio import pipeline
 from minavio.cli import app
-from minavio.core.models import Clip, Highlight, Timeline, TranscriptSegment
+from minavio.core.models import (
+    Clip,
+    Effect,
+    Highlight,
+    Overlay,
+    SfxCue,
+    Timeline,
+    TranscriptSegment,
+)
 from minavio.errors import FFmpegError, LLMUnavailableError, MinavioError
 
 runner = CliRunner()
@@ -27,6 +35,7 @@ class Fakes:
         self.autocut_inputs: list[tuple[Path, object, list | None]] = []
         self.plan_kwargs: dict = {}
         self.audio_calls: list[list[Path]] = []
+        self.memes_use_llm: list[bool] = []
         self.rendered: list = []  # timelines passées à render_timeline
 
     def _rec(self, name):
@@ -107,6 +116,15 @@ class Fakes:
             self._rec("sfx")
             return []
 
+        def memes(timeline, highlights, by_source, profile, use_llm=False):
+            self._rec("memes")
+            self.memes_use_llm.append(use_llm)
+            return SimpleNamespace(
+                sfx=[SfxCue(at=1.0, sound="hit")],
+                effects=[Effect(kind="shake", at=0.5)],
+                overlays=[Overlay(template="media", start=1, duration=1, props={"path": "x"})],
+            )
+
         def chapters(timeline, highlights, profile):
             self._rec("chapters")
             return []
@@ -131,6 +149,7 @@ class Fakes:
             "generate_copy": copy,
             "plan_timeline": plan,
             "plan_sfx": sfx,
+            "plan_memes": memes,
             "generate_chapters": chapters,
             "format_chapters": format_chapters,
             "build_caption_overlays": caps,
@@ -421,3 +440,46 @@ def test_render_unknown_encoder_healed_with_warning(env, monkeypatch):
     assert any("video_codec=libx264" in w for w in res.warnings)
     log = json.loads((res.work_dir / "healing.json").read_text(encoding="utf-8"))
     assert log[0]["category"] == "encoder"
+
+
+def _memes_profile(monkeypatch, enabled=True):
+    from minavio import config as config_mod
+
+    real_load = config_mod.load_profile
+
+    def load(profile_id, *a, **k):
+        p = real_load(profile_id, *a, **k)
+        p.memes.enabled = enabled
+        return p
+
+    monkeypatch.setattr(config_mod, "load_profile", load)
+
+
+def test_memes_step_not_called_when_disabled(env, monkeypatch):
+    fakes, _ = env
+    _memes_profile(monkeypatch, enabled=False)
+    res = job(env)
+    assert "memes" not in fakes.calls
+    assert not (res.work_dir / "memes.json").exists()
+
+
+def test_memes_step_merges_into_timeline(env, monkeypatch):
+    fakes, _ = env
+    _memes_profile(monkeypatch)
+    res = job(env)
+    assert fakes.calls.index("memes") > fakes.calls.index("captions")
+    data = json.loads((res.work_dir / "memes.json").read_text())
+    assert data["effects"][0]["kind"] == "shake"
+    tl = fakes.rendered[0]
+    assert [c.sound for c in tl.sfx][-1] == "hit"
+    assert tl.effects and any(o.template == "media" for o in tl.overlays)
+    assert fakes.memes_use_llm  # appelée aussi pour le short
+
+
+def test_memes_failure_is_warning(env, monkeypatch):
+    fakes, _ = env
+    _memes_profile(monkeypatch)
+    fakes.fail.add("memes")
+    res = job(env)
+    assert any("memes" in w for w in res.warnings)
+    assert len(res.outputs) == 3 and not fakes.rendered[0].effects

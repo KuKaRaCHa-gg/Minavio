@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from minavio.config.schema import ChannelProfile, OutputFormat
-from minavio.core import ffmpeg, interpolate, reframe, sfx
+from minavio.core import effects, ffmpeg, interpolate, reframe, sfx
 from minavio.core.audio import mix
 from minavio.core.models import Clip, Timeline
 from minavio.errors import FFmpegError, MinavioError
@@ -142,6 +142,48 @@ def _audio_track(timeline: Timeline, source: Path) -> Path | None:
     return next((v for k, v in tracks.items() if Path(k).resolve() == resolved), None)
 
 
+def _media_overlay(
+    args: list[str],
+    graph: list[str],
+    sfx_cues: list[tuple[int, float, float]],
+    cur: str,
+    idx: int,
+    k: int,
+    ov,
+    fmt: OutputFormat,
+    total: float,
+) -> tuple[str, int]:
+    """Overlay média (GIF / image / vidéo) : props {path, kind, x, y, w, h} normalisés 0-1
+    (x, y = coin haut-gauche). L'audio d'une vidéo est mixé sur son intervalle."""
+    props = ov.props
+    path = Path(str(props.get("path", "")))
+    if not path.is_file():
+        raise MinavioError(f"Média d'overlay introuvable : {path}")
+    kind = props.get("kind", "gif")
+    dur = min(ov.duration, total - ov.start)
+    flags = {"gif": ["-ignore_loop", "0"], "image": ["-loop", "1"], "video": ["-stream_loop", "-1"]}
+    if kind not in flags:
+        raise MinavioError(f"Overlay média : kind invalide {kind!r} (gif, image, video)")
+    args += [*flags[kind], "-t", f"{dur:.4f}", "-i", str(path)]
+    w = max(2, round(fmt.width * float(props.get("w", 0.3)) / 2) * 2)
+    h = max(2, round(fmt.height * float(props.get("h", 0.3)) / 2) * 2)
+    x = round(fmt.width * float(props.get("x", 0.35)))
+    y = round(fmt.height * float(props.get("y", 0.35)))
+    graph.append(f"[{idx}:v]format=rgba,scale={w}:{h},setpts=PTS-STARTPTS+{ov.start:.4f}/TB[mv{k}]")
+    graph.append(
+        f"[{cur}][mv{k}]overlay={x}:{y}:enable='{effects.between(ov.start, ov.start + dur)}':"
+        f"eof_action=pass:format=auto[mo{k}]"
+    )
+    if kind == "video":
+        try:
+            has_audio = ffmpeg.probe(path).has_audio
+        except FFmpegError:
+            has_audio = False
+        if has_audio:
+            sfx_cues.append((idx, ov.start, 0.0))
+    return f"mo{k}", idx + 1
+
+
 def build_command(
     timeline: Timeline,
     fmt: OutputFormat,
@@ -246,12 +288,12 @@ def build_command(
         idx += 1
     sfx_cues: list[tuple[int, float, float]] = []
     sfx_cfg = profile.audio.sfx
-    if sfx_cfg.enabled and timeline.sfx:
+    if (sfx_cfg.enabled or profile.memes.enabled) and timeline.sfx:
         input_of: dict[Path, int] = {}
         for cue in sorted(timeline.sfx, key=lambda c: c.at):
             if cue.at >= total:
                 continue
-            path = sfx.resolve_sound(cue.sound, sfx_cfg)
+            path = sfx.cue_path(cue, sfx_cfg)
             if path is None:
                 continue
             if path not in input_of:
@@ -259,7 +301,10 @@ def build_command(
                 input_of[path] = idx
                 idx += 1
             sfx_cues.append((input_of[path], cue.at, cue.gain_db))
-    sfx_parts, sfx_labels = mix.sfx_graph(sfx_cues, SAMPLE_RATE) if sfx_cues else ([], [])
+    vfx = [e for e in timeline.effects if e.kind in effects.VIDEO_KINDS and e.at < total]
+    if vfx:
+        graph += effects.video_graph(vfx, cur, "vfx", fmt.width, fmt.height, fmt.fps)
+        cur = "vfx"
     for k, file in sorted((overlay_files or {}).items()):
         if not 0 <= k < len(timeline.overlays):
             raise MinavioError(f"overlay_files[{k}] : index hors de timeline.overlays")
@@ -278,18 +323,48 @@ def build_command(
         )
         cur = f"vo{k}"
         idx += 1
+    for k, ov in enumerate(timeline.overlays):
+        if ov.template != "media" or ov.start >= total:
+            continue
+        cur, idx = _media_overlay(args, graph, sfx_cues, cur, idx, k, ov, fmt, total)
+    for k, e in enumerate(effects.popup_effects(timeline.effects)):
+        if e.at >= total:
+            continue
+        png = out.parent / f".popup_{out.stem}_{k}.png"
+        if temps is not None:
+            temps.append(png)
+        effects.make_error_popup(png, max(int(fmt.width * 0.5), 64))
+        args += ["-loop", "1", "-t", f"{e.duration:.4f}", "-i", str(png)]
+        graph.append(f"[{idx}:v]format=rgba,setpts=PTS-STARTPTS+{e.at:.4f}/TB[pp{k}]")
+        graph.append(
+            f"[{cur}][pp{k}]overlay=x=(W-w)/2:y=(H-h)/2:"
+            f"enable='{effects.between(e.at, e.at + e.duration)}':eof_action=pass[pop{k}]"
+        )
+        cur = f"pop{k}"
+        idx += 1
     graph.append(f"[{cur}]format=yuv420p[vout]")
 
+    sfx_parts, sfx_labels = mix.sfx_graph(sfx_cues, SAMPLE_RATE) if sfx_cues else ([], [])
     graph += sfx_parts
+    post = [
+        f
+        for f in (
+            effects.audio_filters([e for e in timeline.effects if e.at < total]),
+            effects.limiter_filter(profile.memes.max_true_peak_db) if profile.memes.enabled else "",
+        )
+        if f
+    ]
     graph += mix.audio_graph(
         "voice",
         music_label,
         total,
         profile.audio.loudness_lufs,
         profile.audio.ducking,
-        "aout",
+        "apre" if post else "aout",
         sfx=sfx_labels or None,
     )
+    if post:
+        graph.append(f"[apre]{','.join(post)}[aout]")
 
     args += ["-filter_complex", ";".join(graph), "-map", "[vout]", "-map", "[aout]"]
     codec = video_codec or "libx264"
