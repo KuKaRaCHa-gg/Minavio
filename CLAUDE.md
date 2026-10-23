@@ -2,6 +2,7 @@
 
 Moteur de montage automatique pour Minivitch, Byte Tricks, The Lost Chat.
 Architecture complète : `docs/ARCHITECTURE.md`. État, reprise et backlog : `docs/HANDOFF.md`.
+Paramétrage (clés, comptes, installation) : `docs/SETUP.md`.
 Contexte du LLM local (Qwen) : `docs/QWEN_CONTEXT.md`.
 
 ## Rôle de la session principale (orchestrateur)

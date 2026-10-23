@@ -206,3 +206,11 @@ def test_heuristic_style_light_drops_forbidden_effects(tmp_path: Path, style: st
     plan = plan_memes(_timeline(), [_hl(10.0, "kill")], TRANSCRIPT, profile, use_llm=False)
     assert "error_popup" not in {e.kind for e in plan["effects"]}
     assert "zoom_punch" in {e.kind for e in plan["effects"]}
+
+
+def test_heuristic_other_labels_get_default_punch(tmp_path: Path) -> None:
+    # clutch, victory… (labels du LLM) : zoom par défaut, pour ne pas laisser un montage sans effet.
+    _library(tmp_path)
+    profile = _profile(tmp_path)
+    plan = plan_memes(_timeline(), [_hl(10.0, "clutch")], TRANSCRIPT, profile, use_llm=False)
+    assert ("zoom_punch", 10.0) in {(e.kind, e.at) for e in plan["effects"]}

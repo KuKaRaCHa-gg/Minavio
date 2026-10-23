@@ -37,7 +37,7 @@ class FakeFlow:
 def fake_google(creds):
     class Creds:
         @staticmethod
-        def from_authorized_user_file(path, scopes):
+        def from_authorized_user_file(path, scopes=None):
             return creds
 
     return lambda: (lambda: SimpleNamespace(), Creds, FakeFlow)

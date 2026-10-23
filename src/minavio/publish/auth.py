@@ -21,9 +21,11 @@ from minavio.errors import MinavioError
 
 log = logging.getLogger("minavio.publish")
 
+ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"  # rapports de chaîne
 SCOPES = (
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",  # miniatures et playlists
+    ANALYTICS_SCOPE,
 )
 CLIENT_SECRET_NAME = "youtube_client_secret.json"
 TOKEN_NAME = "youtube_token.json"
@@ -134,7 +136,9 @@ def load_credentials() -> Any:
         raise MinavioError("YouTube non connecté. Lance `minavio publish auth`. " + SETUP_HINT)
     request_cls, creds_cls, _ = _import_google()
     try:
-        creds = creds_cls.from_authorized_user_file(str(path), list(SCOPES))
+        # Scopes du jeton tels qu'accordés : un jeton antérieur à l'ajout d'Analytics reste
+        # valide pour publier (demander un scope non accordé ferait échouer le rafraîchissement).
+        creds = creds_cls.from_authorized_user_file(str(path))
     except (ValueError, OSError, KeyError) as e:
         raise MinavioError(
             f"Jeton YouTube illisible ({path}) : relance `minavio publish auth`."

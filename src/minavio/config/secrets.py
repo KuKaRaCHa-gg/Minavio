@@ -24,6 +24,17 @@ KNOWN_KEYS = (
     "FREESOUND_API_KEY",
     "PIXABAY_API_KEY",
     "PEXELS_API_KEY",
+    "YOUTUBE_API_KEY",
+    "APEX_API_KEY",
+    "RIOT_API_KEY",
+    "TWITCH_CLIENT_ID",
+    "TWITCH_CLIENT_SECRET",
+    "REDDIT_CLIENT_ID",
+    "REDDIT_CLIENT_SECRET",
+    "DISCORD_WEBHOOK_URL",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID",
+    "NTFY_TOPIC",
 )
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _loaded = False

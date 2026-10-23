@@ -133,7 +133,8 @@ def _valid_cue(raw: Any, duration: float) -> dict[str, Any] | None:
 
 
 def _heuristic_cues(moments: list[_Moment]) -> list[dict[str, Any]]:
-    """Sans LLM : kill -> zoom + hit ; multi_kill -> shake + flash ; fail -> freeze + bruh."""
+    """Sans LLM : kill -> zoom + hit ; multi_kill -> shake + flash ; fail -> freeze + bruh ;
+    autre label -> zoom + boom."""
     cues: list[dict[str, Any]] = []
 
     def effect(kind: str, at: float, duration: float | None = None) -> None:
@@ -150,9 +151,12 @@ def _heuristic_cues(moments: list[_Moment]) -> list[dict[str, Any]]:
         elif "kill" in label:
             effect("zoom_punch", m.at, 0.4)
             sound("hit", m.at)
-        elif "fail" in label or "funny" in label:
+        elif "fail" in label or "funny" in label or "death" in label:
             effect("freeze", m.at, 0.6)
             sound("bruh", m.at)
+        else:  # clutch, victory, boss_kill, chaos… : ponctuation par défaut sur le pic
+            effect("zoom_punch", m.at, 0.4)
+            sound("boom", m.at)
     return cues
 
 
