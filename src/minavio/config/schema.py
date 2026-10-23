@@ -76,6 +76,25 @@ class DenoiseSettings(_Model):
     )
 
 
+class MemeSettings(_Model):
+    """Montage « .exe » : memes (GIF, images, vidéos, sons) et effets choisis par le LLM local."""
+
+    enabled: bool = False
+    style: Literal["exe", "light"] = "light"  # exe = chaos assumé ; light = quelques ponctuations
+    density_per_min: float = Field(default=6, ge=0, le=30)  # cues max par minute de vidéo
+    library_dir: str | None = None  # banque perso (prioritaire), sinon ~/.config/minavio/memes
+    providers: list[
+        Literal["local", "tenor", "giphy", "freesound", "pixabay", "pexels", "imgflip"]
+    ] = Field(default_factory=lambda: ["local"])
+    # Sécurité droits d'auteur : par défaut seuls les médias de licence connue et réutilisable
+    # (cc0, cc-by, pixabay, pexels, user) sont utilisés ; `api-terms`/`unknown` exigent l'opt-in.
+    allow_restricted_licenses: bool = False
+    effects: list[str] = Field(
+        default_factory=lambda: ["shake", "zoom_punch", "freeze", "flash", "bass_boost"]
+    )
+    max_true_peak_db: float = Field(default=-1.0, le=0)  # limiteur final : jamais de « earrape »
+
+
 class AudioSettings(_Model):
     music_dir: str | None = None
     beat_sync: bool = True
@@ -280,6 +299,7 @@ class ChannelProfile(_Model):
     shorts: ShortsSettings = Field(default_factory=ShortsSettings)
     chapters: bool = False  # chapitres YouTube dans out/<profil>/<job>_chapters.txt
     thumbnails: ThumbnailSettings = Field(default_factory=ThumbnailSettings)
+    memes: MemeSettings = Field(default_factory=MemeSettings)
     publish: PublishSettings = Field(default_factory=PublishSettings)
     # Thème nommé (cf. minavio.config.presets.THEMES) : remplit les champs non écrits en YAML.
     theme_preset: Literal["retro_pixel", "tech_minimal", "streamer_vibrant", "neutral"] | None = (

@@ -7,7 +7,7 @@ sauf mention contraire.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -84,6 +84,34 @@ class SfxCue(_Model):
     at: float = Field(ge=0)
     sound: str  # nom logique : "whoosh", "hit", "boom", "rewind"…
     gain_db: float = Field(default=0, le=12)
+    path: Path | None = None  # fichier direct (banque de memes) ; prioritaire sur `sound`
+
+
+EffectKind = Literal[
+    "shake", "zoom_punch", "deep_fry", "glitch", "freeze", "bass_boost", "flash", "error_popup"
+]
+
+
+class Effect(_Model):
+    """Effet « .exe » ponctuel sur la vidéo et/ou le son ; temps de la timeline rendue."""
+
+    kind: EffectKind
+    at: float = Field(ge=0)
+    duration: float = Field(default=0.5, gt=0, le=5)
+    intensity: float = Field(default=0.6, ge=0, le=1)
+
+
+class MemeAsset(_Model):
+    """Média de meme en cache local, avec sa provenance (licence suivie pour la publication)."""
+
+    id: str
+    kind: Literal["gif", "image", "video", "sound"]
+    path: Path
+    source: str  # local, tenor, giphy, freesound, pixabay, pexels, imgflip
+    tags: list[str] = Field(default_factory=list)
+    license: str = "unknown"  # ex. cc0, cc-by-4.0, pixabay, pexels, api-terms, user
+    author: str | None = None
+    url: str | None = None
 
 
 class ThumbnailCandidate(_Model):
@@ -124,6 +152,7 @@ class Timeline(_Model):
     # Index (dans `clips`) du premier clip « réel » : les clips avant sont un cold open.
     cold_open_clips: int = Field(default=0, ge=0)
     # Pistes audio retraitées (séparation / débruitage) : source -> fichier audio (même durée).
+    effects: list[Effect] = Field(default_factory=list)
     audio_tracks: dict[Path, Path] = Field(default_factory=dict)
 
     @property
