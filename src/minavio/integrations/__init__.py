@@ -1,1 +1,2 @@
-"""Intégrations externes : statistiques de jeu (Apex, Riot) et fact-check (Wikipedia/Wikidata)."""
+"""Intégrations externes facultatives : stats de jeu, fact-check, recherche de niche, tendances,
+notifications. Clés hors dépôt (env ou secrets.env), jamais journalisées."""
