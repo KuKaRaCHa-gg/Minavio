@@ -1,4 +1,4 @@
-"""Environnement isolé pour les intégrations : aucune clé réelle, aucun secrets.env lu."""
+"""Tests isolés : aucune clé réelle, aucun secrets.env lu, donc aucune notification envoyée."""
 
 from __future__ import annotations
 

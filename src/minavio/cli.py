@@ -119,6 +119,13 @@ def profiles_new(
 preset = typer.Typer(no_args_is_help=True, help="Alias de `profiles new`.")
 app.add_typer(preset, name="preset")
 
+# Intégrations facultatives (clés hors dépôt) : stats de jeu, fact-check, tendances, notifications.
+from minavio.integrations.cli_stats import stats_app  # noqa: E402
+from minavio.integrations.cli_trends import trends_app  # noqa: E402
+
+app.add_typer(stats_app, name="stats")
+app.add_typer(trends_app)
+
 
 @preset.command("create")
 def preset_create(
